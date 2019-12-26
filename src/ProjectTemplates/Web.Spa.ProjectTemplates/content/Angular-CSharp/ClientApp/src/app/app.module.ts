@@ -1,7 +1,11 @@
 import { BrowserModule } from '@angular/platform-browser';
 import { NgModule } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+////#if (IndividualLocalAuth)
 import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
+////#else
+import { HttpClientModule } from '@angular/common/http';
+////#endif
 import { RouterModule } from '@angular/router';
 
 import { AppComponent } from './app.component';
@@ -27,26 +31,26 @@ import { AuthorizeInterceptor } from 'src/api-authorization/authorize.intercepto
     BrowserModule.withServerTransition({ appId: 'ng-cli-universal' }),
     HttpClientModule,
     FormsModule,
-////#if (IndividualLocalAuth)
+    ////#if (IndividualLocalAuth)
     ApiAuthorizationModule,
-////#endif
+    ////#endif
     RouterModule.forRoot([
       { path: '', component: HomeComponent, pathMatch: 'full' },
       { path: 'counter', component: CounterComponent },
-////#if (IndividualLocalAuth)
+      ////#if (IndividualLocalAuth)
       { path: 'fetch-data', component: FetchDataComponent, canActivate: [AuthorizeGuard] },
-////#else
+      ////#else
       { path: 'fetch-data', component: FetchDataComponent },
-////#endif
+      ////#endif
     ])
   ],
-////#if (IndividualLocalAuth)
+  ////#if (IndividualLocalAuth)
   providers: [
     { provide: HTTP_INTERCEPTORS, useClass: AuthorizeInterceptor, multi: true }
   ],
-////#else
+  ////#else
   providers: [],
-////#endif
+  ////#endif
   bootstrap: [AppComponent]
 })
 export class AppModule { }

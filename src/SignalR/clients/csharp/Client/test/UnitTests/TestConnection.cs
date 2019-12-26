@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Internal;
 using Microsoft.AspNetCore.SignalR.Protocol;
@@ -18,7 +19,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Microsoft.AspNetCore.SignalR.Client.Tests
 {
-    internal class TestConnection : ConnectionContext
+    internal class TestConnection : ConnectionContext, IConnectionInherentKeepAliveFeature
     {
         private readonly bool _autoHandshake;
         private readonly TaskCompletionSource<object> _started = new TaskCompletionSource<object>();
@@ -30,6 +31,7 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
 
         private readonly Func<Task> _onStart;
         private readonly Func<Task> _onDispose;
+        private readonly bool _hasInherentKeepAlive;
 
         public override string ConnectionId { get; set; }
 
@@ -41,11 +43,14 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
 
         public override IDictionary<object, object> Items { get; set; } = new ConnectionItems();
 
-        public TestConnection(Func<Task> onStart = null, Func<Task> onDispose = null, bool autoHandshake = true)
+        bool IConnectionInherentKeepAliveFeature.HasInherentKeepAlive => _hasInherentKeepAlive;
+
+        public TestConnection(Func<Task> onStart = null, Func<Task> onDispose = null, bool autoHandshake = true, bool hasInherentKeepAlive = false)
         {
             _autoHandshake = autoHandshake;
             _onStart = onStart ?? (() => Task.CompletedTask);
             _onDispose = onDispose ?? (() => Task.CompletedTask);
+            _hasInherentKeepAlive = hasInherentKeepAlive;
 
             var options = new PipeOptions(readerScheduler: PipeScheduler.Inline, writerScheduler: PipeScheduler.Inline, useSynchronizationContext: false);
 
@@ -53,16 +58,12 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
             Application = pair.Application;
             Transport = pair.Transport;
 
-            Application.Input.OnWriterCompleted((ex, _) =>
-            {
-                Application.Output.Complete();
-            },
-            null);
+            Features.Set<IConnectionInherentKeepAliveFeature>(this);
         }
 
-        public Task DisposeAsync() => DisposeCoreAsync();
+        public override ValueTask DisposeAsync() => DisposeCoreAsync();
 
-        public async Task<ConnectionContext> StartAsync(TransferFormat transferFormat = TransferFormat.Binary)
+        public async ValueTask<ConnectionContext> StartAsync()
         {
             _started.TrySetResult(null);
 
@@ -125,6 +126,10 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
             while (true)
             {
                 var result = await ReadSentTextMessageAsyncInner();
+                if (result == null)
+                {
+                    return null;
+                }
 
                 var receivedMessageType = (int?)JObject.Parse(result)["type"];
 
@@ -153,6 +158,7 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
                     }
                     else if (result.IsCompleted)
                     {
+                        await Application.Output.CompleteAsync();
                         return null;
                     }
                 }
@@ -195,7 +201,7 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
             Application.Output.Complete(ex);
         }
 
-        private async Task DisposeCoreAsync(Exception ex = null)
+        private async ValueTask DisposeCoreAsync(Exception ex = null)
         {
             Interlocked.Increment(ref _disposeCount);
             _disposed.TrySetResult(null);

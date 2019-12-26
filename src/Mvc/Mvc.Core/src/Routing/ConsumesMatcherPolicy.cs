@@ -53,7 +53,7 @@ namespace Microsoft.AspNetCore.Mvc.Routing
             return endpoints.Any(e => e.Metadata.GetMetadata<IConsumesMetadata>()?.ContentTypes.Count > 0);
         }
 
-        public Task ApplyAsync(HttpContext httpContext, EndpointSelectorContext context, CandidateSet candidates)
+        public Task ApplyAsync(HttpContext httpContext, CandidateSet candidates)
         {
             if (httpContext == null)
             {
@@ -73,8 +73,8 @@ namespace Microsoft.AspNetCore.Mvc.Routing
             {
                 // We do this check first for consistency with how 415 is implemented for the graph version
                 // of this code. We still want to know if any endpoints in this set require an a ContentType
-                // even if those endpoints are already invalid.
-                var metadata = candidates[i].Endpoint.Metadata.GetMetadata<IConsumesMetadata>();
+                // even if those endpoints are already invalid - hence the null check.
+                var metadata = candidates[i].Endpoint?.Metadata.GetMetadata<IConsumesMetadata>();
                 if (metadata == null || metadata.ContentTypes.Count == 0)
                 {
                     // Can match any content type.
@@ -106,7 +106,7 @@ namespace Microsoft.AspNetCore.Mvc.Routing
                 }
 
                 var contentType = httpContext.Request.ContentType;
-                var mediaType = string.IsNullOrEmpty(contentType) ? (MediaType?)null : new MediaType(contentType); 
+                var mediaType = string.IsNullOrEmpty(contentType) ? (MediaType?)null : new MediaType(contentType);
 
                 var matched = false;
                 for (var j = 0; j < metadata.ContentTypes.Count; j++)
@@ -145,7 +145,7 @@ namespace Microsoft.AspNetCore.Mvc.Routing
             if (needs415Endpoint == true)
             {
                 // We saw some endpoints coming in, and we eliminated them all.
-                context.Endpoint = CreateRejectionEndpoint();
+                httpContext.SetEndpoint(CreateRejectionEndpoint());
             }
 
             return Task.CompletedTask;
@@ -220,7 +220,7 @@ namespace Microsoft.AspNetCore.Mvc.Routing
                             var mediaType = new MediaType(contentType);
 
                             // Example: 'application/json' is subset of 'application/*'
-                            // 
+                            //
                             // This means that when the request has content-type 'application/json' an endpoint
                             // what consumes 'application/*' should match.
                             if (edgeKey.IsSubsetOf(mediaType))

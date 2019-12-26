@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Endpoints;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -56,7 +55,7 @@ namespace Microsoft.AspNetCore.StaticFiles
 
             _next = next;
             _options = options.Value;
-            _contentTypeProvider = options.Value.ContentTypeProvider ?? new FileExtensionContentTypeProvider();
+            _contentTypeProvider = _options.ContentTypeProvider ?? new FileExtensionContentTypeProvider();
             _fileProvider = _options.FileProvider ?? Helpers.ResolveFileProvider(hostingEnv);
             _matchUrl = _options.RequestPath;
             _logger = loggerFactory.CreateLogger<StaticFileMiddleware>();
@@ -99,18 +98,7 @@ namespace Microsoft.AspNetCore.StaticFiles
 
         private static bool ValidateMethod(HttpContext context)
         {
-            var method = context.Request.Method;
-            var isValid = false;
-            if (HttpMethods.IsGet(method))
-            {
-                isValid = true;
-            }
-            else if (HttpMethods.IsHead(method))
-            {
-                isValid = true;
-            }
-
-            return isValid;
+            return Helpers.IsGetOrHeadMethod(context.Request.Method);
         }
 
         internal static bool ValidatePath(HttpContext context, PathString matchUrl, out PathString subPath) => Helpers.TryMatchPath(context, matchUrl, forDirectory: false, out subPath);

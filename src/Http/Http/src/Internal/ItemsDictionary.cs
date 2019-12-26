@@ -4,9 +4,9 @@
 using System.Collections;
 using System.Collections.Generic;
 
-namespace Microsoft.AspNetCore.Http.Internal
+namespace Microsoft.AspNetCore.Http
 {
-    public class ItemsDictionary : IDictionary<object, object>
+    internal class ItemsDictionary : IDictionary<object, object>
     {
         private IDictionary<object, object> _items;
 
@@ -101,7 +101,7 @@ namespace Microsoft.AspNetCore.Http.Internal
                 EmptyDictionary.Collection.CopyTo(array, arrayIndex);
             }
 
-            _items.CopyTo(array, arrayIndex);
+            _items?.CopyTo(array, arrayIndex);
         }
 
         int ICollection<KeyValuePair<object, object>>.Count => _items?.Count ?? 0;
@@ -133,7 +133,7 @@ namespace Microsoft.AspNetCore.Http.Internal
         IEnumerator<KeyValuePair<object, object>> IEnumerable<KeyValuePair<object, object>>.GetEnumerator()
             => _items?.GetEnumerator() ?? EmptyEnumerator.Instance;
 
-        IEnumerator IEnumerable.GetEnumerator() => _items.GetEnumerator() ?? EmptyEnumerator.Instance;
+        IEnumerator IEnumerable.GetEnumerator() => _items?.GetEnumerator() ?? EmptyEnumerator.Instance;
 
         private class EmptyEnumerator : IEnumerator<KeyValuePair<object, object>>
         {

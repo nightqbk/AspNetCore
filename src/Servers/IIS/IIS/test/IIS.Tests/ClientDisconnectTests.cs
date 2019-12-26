@@ -5,34 +5,33 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.IntegrationTesting;
 using Microsoft.AspNetCore.Testing;
-using Microsoft.AspNetCore.Testing.xunit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
 using Xunit;
 
-namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
+namespace Microsoft.AspNetCore.Server.IIS.FunctionalTests
 {
     [SkipIfHostableWebCoreNotAvailable]
-    [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, "https://github.com/aspnet/IISIntegration/issues/866")]
+    [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8, SkipReason = "https://github.com/aspnet/IISIntegration/issues/866")]
     public class ClientDisconnectTests : StrictTestServerTests
     {
         [ConditionalFact]
-        [Flaky("https://github.com/aspnet/AspNetCore-Internal/issues/2358", FlakyOn.All)]
         public async Task WritesSucceedAfterClientDisconnect()
         {
             var requestStartedCompletionSource = CreateTaskCompletionSource();
-            var clientDisconnectedCompletionSource = CreateTaskCompletionSource();
             var requestCompletedCompletionSource = CreateTaskCompletionSource();
+            var requestAborted = CreateTaskCompletionSource();
 
             var data = new byte[1024];
             using (var testServer = await TestServer.Create(
                 async ctx =>
                 {
                     requestStartedCompletionSource.SetResult(true);
-                    await clientDisconnectedCompletionSource.Task;
+                    ctx.RequestAborted.Register(() => requestAborted.SetResult(true));
+
+                    await requestAborted.Task.DefaultTimeout();
                     for (var i = 0; i < 1000; i++)
                     {
                         await ctx.Response.Body.WriteAsync(data);
@@ -46,7 +45,8 @@ namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
                     await SendContentLength1Post(connection);
                     await requestStartedCompletionSource.Task.DefaultTimeout();
                 }
-                clientDisconnectedCompletionSource.SetResult(true);
+
+                await requestAborted.Task.DefaultTimeout();
 
                 await requestCompletedCompletionSource.Task.DefaultTimeout();
             }
@@ -55,7 +55,6 @@ namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
         }
 
         [ConditionalFact]
-        [Repeat(20)]
         public async Task WritesCanceledWhenUsingAbortedToken()
         {
             var requestStartedCompletionSource = CreateTaskCompletionSource();

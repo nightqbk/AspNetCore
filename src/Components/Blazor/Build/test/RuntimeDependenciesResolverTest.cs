@@ -5,23 +5,16 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Microsoft.AspNetCore.Testing.xunit;
+using System.Text;
+using Microsoft.AspNetCore.Testing;
 using Xunit;
-using Xunit.Abstractions;
 
-namespace Microsoft.AspNetCore.Blazor.Build.Test
+namespace Microsoft.AspNetCore.Blazor.Build
 {
     public class RuntimeDependenciesResolverTest
     {
-        private readonly ITestOutputHelper _output;
-
-        public RuntimeDependenciesResolverTest(ITestOutputHelper output)
-        {
-            _output = output;
-        }
-
-        [ConditionalFact]
-        [SkipOnHelix] // https://github.com/aspnet/AspNetCore/issues/6549
+        [ConditionalFact(Skip = " https://github.com/aspnet/AspNetCore/issues/12059")]
+        [SkipOnHelix("https://github.com/aspnet/AspNetCore/issues/10426")]
         public void FindsReferenceAssemblyGraph_ForStandaloneApp()
         {
             // Arrange
@@ -37,7 +30,7 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
             var references = new[]
             {
                 "Microsoft.AspNetCore.Blazor.dll",
-                "Microsoft.AspNetCore.Components.Browser.dll",
+                "Microsoft.AspNetCore.Components.Web.dll",
                 "Microsoft.AspNetCore.Components.dll",
                 "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
                 "Microsoft.Extensions.DependencyInjection.dll",
@@ -66,8 +59,8 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                  */
                 "Microsoft.AspNetCore.Blazor.dll",
                 "Microsoft.AspNetCore.Blazor.pdb",
-                "Microsoft.AspNetCore.Components.Browser.dll",
-                "Microsoft.AspNetCore.Components.Browser.pdb",
+                "Microsoft.AspNetCore.Components.Web.dll",
+                "Microsoft.AspNetCore.Components.Web.pdb",
                 "Microsoft.AspNetCore.Components.dll",
                 "Microsoft.AspNetCore.Components.pdb",
                 "Microsoft.Extensions.DependencyInjection.Abstractions.dll",
@@ -80,6 +73,7 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
                 "StandaloneApp.dll",
                 "StandaloneApp.pdb",
                 "System.dll",
+                "System.Buffers.dll",
                 "System.Collections.Concurrent.dll",
                 "System.Collections.dll",
                 "System.ComponentModel.Composition.dll",
@@ -115,7 +109,7 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
 
             // Act
 
-            var paths = RuntimeDependenciesResolver
+            var paths = ResolveBlazorRuntimeDependencies
                 .ResolveRuntimeDependenciesCore(
                     mainAssemblyLocation,
                     references,
@@ -128,14 +122,49 @@ namespace Microsoft.AspNetCore.Blazor.Build.Test
 
             var expected = new HashSet<string>(expectedContents);
             var actual = new HashSet<string>(contents);
-            _output.WriteLine("Expected contents to have:");
-            _output.WriteLine(string.Join(",", expected.Except(actual)));
 
-            _output.WriteLine("Unexpected contents:");
-            _output.WriteLine(string.Join(",", actual.Except(expected)));
+            var contentNotFound = expected.Except(actual);
+            var additionalContentFound = actual.Except(expected);
 
             // Assert
+            if (contentNotFound.Any() || additionalContentFound.Any())
+            {
+                throw new ContentMisMatchException
+                {
+                    ContentNotFound = contentNotFound,
+                    AdditionalContentFound = additionalContentFound,
+                };
+            }
+
             Assert.Equal(expectedContents, contents);
+        }
+
+        private class ContentMisMatchException : Xunit.Sdk.XunitException
+        {
+            public IEnumerable<string> ContentNotFound { get; set; }
+
+            public IEnumerable<string> AdditionalContentFound { get; set; }
+
+            public override string Message
+            {
+                get
+                {
+                    var error = new StringBuilder();
+                    if (ContentNotFound.Any())
+                    {
+                        error.Append($"Expected content not found: ")
+                            .AppendJoin(", ", ContentNotFound);
+                    }
+
+                    if (AdditionalContentFound.Any())
+                    {
+                        error.Append("Unexpected content found: ")
+                            .AppendJoin(", ", AdditionalContentFound);
+                    }
+
+                    return error.ToString();
+                }
+            }
         }
     }
 }

@@ -4,7 +4,6 @@
 using System;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.AspNetCore.Routing.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -99,31 +98,6 @@ namespace Microsoft.AspNetCore.Builder
             {
                 routeOptions.Value.EndpointDataSources.Add(dataSource);
             }
-
-            return builder.UseMiddleware<EndpointMiddleware>();
-        }
-
-        /// <summary>
-        /// Adds a <see cref="EndpointMiddleware"/> middleware to the specified <see cref="IApplicationBuilder"/> that will
-        /// execute the <see cref="Endpoint"/> associated with the current request.
-        /// </summary>
-        /// <param name="builder">The <see cref="IApplicationBuilder"/> to add the middleware to.</param>
-        /// <returns>A reference to this instance after the operation has completed.</returns>
-        /// <remarks>
-        /// <para>
-        /// A call to <see cref="UseEndpointExecutor(IApplicationBuilder)"/> may be used to execute an endpoint with
-        /// using <see cref="UseRouting(IApplicationBuilder)" />. This enables applications to use endpoints with other
-        /// middleware not related to routing.
-        /// </para>
-        /// </remarks>
-        public static IApplicationBuilder UseEndpointExecutor(this IApplicationBuilder builder)
-        {
-            if (builder == null)
-            {
-                throw new ArgumentNullException(nameof(builder));
-            }
-
-            // Note: we don't require routing services either.
 
             return builder.UseMiddleware<EndpointMiddleware>();
         }

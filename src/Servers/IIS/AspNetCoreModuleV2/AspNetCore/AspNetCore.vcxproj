@@ -26,6 +26,7 @@
     <TargetName>aspnetcorev2</TargetName>
     <LinkIncremental>false</LinkIncremental>
     <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
+    <OutDirName>AspNetCoreModuleShim</OutDirName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
@@ -74,9 +75,6 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup>
-    <OutDir>$(MSBuildProjectDirectory)\bin\$(Configuration)\$(Platform)\</OutDir>
-  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
@@ -235,8 +233,6 @@
     <ClInclude Include="AppOfflineApplication.h" />
     <ClInclude Include="AppOfflineHandler.h" />
     <ClInclude Include="DisconnectHandler.h" />
-    <ClInclude Include="PollingAppOfflineApplication.h" />
-    <ClInclude Include="ServerErrorApplication.h" />
     <ClInclude Include="ShimOptions.h" />
     <ClInclude Include="globalmodule.h" />
     <ClInclude Include="resource.h" />
@@ -251,7 +247,6 @@
     <ClCompile Include="AppOfflineApplication.cpp" />
     <ClCompile Include="AppOfflineHandler.cpp" />
     <ClCompile Include="DisconnectHandler.cpp" />
-    <ClCompile Include="PollingAppOfflineApplication.cpp" />
     <ClCompile Include="ShimOptions.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="globalmodule.cpp" />

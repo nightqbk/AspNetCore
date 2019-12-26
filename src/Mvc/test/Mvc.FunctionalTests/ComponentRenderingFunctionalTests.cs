@@ -18,7 +18,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
     public class ComponentRenderingFunctionalTests : IClassFixture<MvcTestFixture<BasicWebSite.StartupWithoutEndpointRouting>>
     {
         private static readonly Regex ContentWrapperRegex = new Regex(
-            $"<!-- M.A.C.Component:{{\"circuitId\":\"[^\"]+\",\"rendererId\":\"\\d+\",\"componentId\":\"\\d+\"}} -->(?<content>.*)<!-- M.A.C.Component: \\d+ -->",
+            "<!-- M.A.C.Component: {\"circuitId\":\"[^\"]+\",\"rendererId\":\\d+,\"componentId\":\\d+} -->(?<content>.*)<!-- M.A.C.Component: \\d+ -->",
             RegexOptions.Compiled | RegexOptions.Singleline, TimeSpan.FromSeconds(1)); // Treat the entire input string as a single line
 
         public ComponentRenderingFunctionalTests(MvcTestFixture<BasicWebSite.StartupWithoutEndpointRouting> fixture)
@@ -37,26 +37,10 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             var response = await client.GetAsync("http://localhost/components");
 
             // Assert
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            await response.AssertStatusCodeAsync(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
 
-            AssertComponent("\n<p>Hello world!</p>", "Greetings", content);
-        }
-
-        [Fact]
-        public async Task Renders_BasicComponent_UsingRazorComponents_Prerenderer()
-        {
-            // Arrange & Act
-            var client = CreateClient(Factory
-                .WithWebHostBuilder(builder => builder.ConfigureServices(services => services.AddServerSideBlazor())));
-
-            var response = await client.GetAsync("http://localhost/components");
-
-            // Assert
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var content = await response.Content.ReadAsStringAsync();
-
-            AssertComponent("\n<p>Hello world!</p>", "Greetings", content);
+            AssertComponent("<p>Hello world!</p>", "Greetings", content);
         }
 
         [Fact]
@@ -68,10 +52,25 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             var response = await client.GetAsync("http://localhost/components/routable");
 
             // Assert
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            await response.AssertStatusCodeAsync(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
 
-            AssertComponent("\nRouter component\n<p>Routed successfully</p>", "Routing", content);
+            AssertComponent("Router component\n<p>Routed successfully</p>", "Routing", content);
+        }
+
+        [Fact]
+        public async Task Redirects_Navigation_Component()
+        {
+            // Arrange & Act
+            var fixture = Factory.WithWebHostBuilder(builder => builder.ConfigureServices(services => services.AddServerSideBlazor()));
+            fixture.ClientOptions.AllowAutoRedirect = false;
+            var client = CreateClient(fixture);
+
+            var response = await client.GetAsync("http://localhost/components/Navigation");
+
+            // Assert
+            await response.AssertStatusCodeAsync(HttpStatusCode.Redirect);
+            Assert.Equal("http://localhost/navigation-redirect", response.Headers.Location.ToString());
         }
 
         [Fact]
@@ -84,42 +83,10 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             var response = await client.GetAsync("http://localhost/components/routable");
 
             // Assert
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            await response.AssertStatusCodeAsync(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
 
-            AssertComponent("\nRouter component\n<p>Routed successfully</p>", "Routing", content);
-        }
-
-        [Fact]
-        public async Task Renders_BasicComponentInteractive_UsingRazorComponents_Prerenderer()
-        {
-            // Arrange & Act
-            var client = CreateClient(Factory
-                .WithWebHostBuilder(builder => builder.ConfigureServices(services => services.AddServerSideBlazor())));
-
-            var response = await client.GetAsync("http://localhost/components/false");
-
-            // Assert
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var content = await response.Content.ReadAsStringAsync();
-
-            AssertComponent("<p>Hello world!</p>", "Greetings", content, unwrap: true);
-        }
-
-        [Fact]
-        public async Task Renders_RoutingComponentInteractive_UsingRazorComponents_Prerenderer()
-        {
-            // Arrange & Act
-            var client = CreateClient(Factory
-                .WithWebHostBuilder(builder => builder.ConfigureServices(services => services.AddServerSideBlazor())));
-
-            var response = await client.GetAsync("http://localhost/components/routable/false");
-
-            // Assert
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var content = await response.Content.ReadAsStringAsync();
-
-            AssertComponent("Router component\n<p>Routed successfully</p>", "Routing", content, unwrap: true);
+            AssertComponent("Router component\n<p>Routed successfully</p>", "Routing", content);
         }
 
         [Fact]
@@ -141,8 +108,7 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         public async Task Renders_AsyncComponent()
         {
             // Arrange & Act
-            var expectedHtml = @"
-<h1>Weather forecast</h1>
+            var expectedHtml = @"<h1>Weather forecast</h1>
 
 <p>This component demonstrates fetching data from the server.</p>
 
@@ -194,28 +160,21 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
             var response = await client.GetAsync("http://localhost/components");
 
             // Assert
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            await response.AssertStatusCodeAsync(HttpStatusCode.OK);
             var content = await response.Content.ReadAsStringAsync();
 
             AssertComponent(expectedHtml, "FetchData", content);
         }
 
-        private void AssertComponent(string expectedContent, string divId, string responseContent, bool unwrap = false)
+        private void AssertComponent(string expectedContent, string divId, string responseContent)
         {
             var parser = new HtmlParser();
             var htmlDocument = parser.Parse(responseContent);
             var div = htmlDocument.Body.QuerySelector($"#{divId}");
-            var content = unwrap ? GetUnwrappedContent(div.InnerHtml) : div.InnerHtml;
+            var content = div.InnerHtml;
             Assert.Equal(
                 expectedContent.Replace("\r\n","\n"),
                 content.Replace("\r\n","\n"));
-        }
-
-        private string GetUnwrappedContent(string rawResult)
-        {
-            return ContentWrapperRegex.Match(rawResult)
-                .Groups["content"].Value
-                .Replace("\r\n", "\n");
         }
 
         // A simple delegating handler used in setting up test services so that we can configure
@@ -224,7 +183,8 @@ namespace Microsoft.AspNetCore.Mvc.FunctionalTests
         {
         }
 
-        private HttpClient CreateClient(WebApplicationFactory<BasicWebSite.StartupWithoutEndpointRouting> fixture)
+        private HttpClient CreateClient(
+            WebApplicationFactory<BasicWebSite.StartupWithoutEndpointRouting> fixture)
         {
             var loopHandler = new LoopHttpHandler();
 

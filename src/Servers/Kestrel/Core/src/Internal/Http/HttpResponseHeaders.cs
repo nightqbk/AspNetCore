@@ -14,8 +14,9 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
 {
     internal sealed partial class HttpResponseHeaders : HttpHeaders
     {
-        private static ReadOnlySpan<byte> _CrLf => new[] { (byte)'\r', (byte)'\n' };
-        private static ReadOnlySpan<byte> _colonSpace => new[] { (byte)':', (byte)' ' };
+        // This uses C# compiler's ability to refer to static data directly. For more information see https://vcsjones.dev/2019/02/01/csharp-readonly-span-bytes-static
+        private static ReadOnlySpan<byte> CrLf => new[] { (byte)'\r', (byte)'\n' };
+        private static ReadOnlySpan<byte> ColonSpace => new[] { (byte)':', (byte)' ' };
 
         public Enumerator GetEnumerator()
         {
@@ -46,9 +47,9 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
                     {
                         if (value != null)
                         {
-                            buffer.Write(_CrLf);
+                            buffer.Write(CrLf);
                             buffer.WriteAsciiNoValidation(kv.Key);
-                            buffer.Write(_colonSpace);
+                            buffer.Write(ColonSpace);
                             buffer.WriteAsciiNoValidation(value);
                         }
                     }

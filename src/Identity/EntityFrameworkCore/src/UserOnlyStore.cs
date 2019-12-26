@@ -250,6 +250,7 @@ namespace Microsoft.AspNetCore.Identity.EntityFrameworkCore
         {
             cancellationToken.ThrowIfCancellationRequested();
             ThrowIfDisposed();
+
             return Users.FirstOrDefaultAsync(u => u.NormalizedUserName == normalizedUserName, cancellationToken);
         }
 
@@ -502,7 +503,8 @@ namespace Microsoft.AspNetCore.Identity.EntityFrameworkCore
         {
             cancellationToken.ThrowIfCancellationRequested();
             ThrowIfDisposed();
-            return Users.SingleOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail, cancellationToken);
+
+            return Task.FromResult(Users.Where(u => u.NormalizedEmail == normalizedEmail).SingleOrDefault());
         }
 
         /// <summary>

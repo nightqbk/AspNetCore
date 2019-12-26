@@ -1,6 +1,8 @@
+// Copyright (c) .NET Foundation. All rights reserved.
+// Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
+
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using BasicTestApp;
 using Microsoft.AspNetCore.Components.E2ETest.Infrastructure;
 using Microsoft.AspNetCore.Components.E2ETest.Infrastructure.ServerFixtures;
@@ -9,10 +11,11 @@ using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 using Xunit;
 using Xunit.Abstractions;
+using Xunit.Sdk;
 
 namespace Microsoft.AspNetCore.Components.E2ETest.Tests
 {
-    public class InteropTest : BasicTestAppTestBase
+    public class InteropTest : ServerTestBase<ToggleExecutionModeServerFixture<Program>>
     {
         public InteropTest(
             BrowserFixture browserFixture,
@@ -25,7 +28,7 @@ namespace Microsoft.AspNetCore.Components.E2ETest.Tests
         protected override void InitializeAsyncCore()
         {
             Navigate(ServerPathBase, noReload: true);
-            MountTestComponent<InteropComponent>();
+            Browser.MountTestComponent<InteropComponent>();
         }
 
         [Fact]
@@ -66,6 +69,8 @@ namespace Microsoft.AspNetCore.Components.E2ETest.Tests
                 ["testDtoAsync"] = "Same",
                 ["returnPrimitiveAsync"] = "123",
                 ["returnArrayAsync"] = "first,second",
+                ["syncGenericInstanceMethod"] = @"""Initial value""",
+                ["asyncGenericInstanceMethod"] = @"""Updated value 1""",
             };
 
             var expectedSyncValues = new Dictionary<string, string>
@@ -100,11 +105,12 @@ namespace Microsoft.AspNetCore.Components.E2ETest.Tests
                 ["testDtoSync"] = "Same",
                 ["returnPrimitive"] = "123",
                 ["returnArray"] = "first,second",
+                ["genericInstanceMethod"] = @"""Updated value 2""",
             };
 
             // Include the sync assertions only when running under WebAssembly
             var expectedValues = expectedAsyncValues;
-            if (!_serverFixture.UsingAspNetHost)
+            if (_serverFixture.ExecutionMode == ExecutionMode.Client)
             {
                 foreach (var kvp in expectedSyncValues)
                 {
@@ -130,13 +136,17 @@ namespace Microsoft.AspNetCore.Components.E2ETest.Tests
             // Assert
             foreach (var expectedValue in expectedValues)
             {
+                var actualValue = actualValues[expectedValue.Key];
                 if (expectedValue.Key.Contains("Exception"))
                 {
-                    Assert.StartsWith(expectedValue.Value, actualValues[expectedValue.Key]);
+                    Assert.StartsWith(expectedValue.Value, actualValue);
                 }
                 else
                 {
-                    Assert.Equal(expectedValue.Value, actualValues[expectedValue.Key]);
+                    if (expectedValue.Value != actualValue)
+                    {
+                        throw new AssertActualExpectedException(expectedValue.Value, actualValue, $"Scenario '{expectedValue.Key}' failed. Expected '{expectedValue.Value}, Actual {actualValue}");
+                    }
                 }
             }
         }

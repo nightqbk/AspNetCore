@@ -3,13 +3,13 @@
 
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.Testing.xunit;
+using Microsoft.AspNetCore.Testing;
 using Xunit;
 
-namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
+namespace Microsoft.AspNetCore.Server.IIS.FunctionalTests
 {
     [SkipIfHostableWebCoreNotAvailable]
-    [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, "https://github.com/aspnet/IISIntegration/issues/866")]
+    [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8, SkipReason = "https://github.com/aspnet/IISIntegration/issues/866")]
     public class ConnectionIdFeatureTests : StrictTestServerTests
     {
         [ConditionalFact]

@@ -4,7 +4,6 @@
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.E2ETesting;
 using Microsoft.AspNetCore.Testing;
-using Microsoft.AspNetCore.Testing.xunit;
 using Templates.Test.Helpers;
 using Xunit;
 using Xunit.Abstractions;
@@ -17,7 +16,6 @@ namespace Templates.Test.SpaTemplateTest
             : base(projectFactory, browserFixture, output) { }
 
         [Fact]
-        [Flaky("https://github.com/aspnet/AspNetCore-Internal/issues/2422", FlakyOn.All)]
         public Task AngularTemplate_Works()
             => SpaTemplateImplAsync("angularnoauth", "angular", useLocalDb: false, usesAuth: false);
 

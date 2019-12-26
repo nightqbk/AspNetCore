@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Endpoints;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -26,58 +25,10 @@ namespace Microsoft.AspNetCore.Routing
             var httpContext = new DefaultHttpContext();
             httpContext.RequestServices = new ServiceProvider();
 
+            var calledNext = false;
             RequestDelegate next = (c) =>
             {
-                return Task.CompletedTask;
-            };
-
-            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, next, RouteOptions);
-
-            // Act
-            await middleware.Invoke(httpContext);
-
-            // Assert - does not throw
-        }
-
-        [Fact]
-        public async Task Invoke_NoEndpoint_NoOps()
-        {
-            // Arrange
-            var httpContext = new DefaultHttpContext();
-            httpContext.RequestServices = new ServiceProvider();
-            httpContext.SetEndpoint(null);
-            
-            RequestDelegate next = (c) =>
-            {
-                return Task.CompletedTask;
-            };
-
-            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, next, RouteOptions);
-
-            // Act
-            await middleware.Invoke(httpContext);
-
-            // Assert - does not throw
-        }
-
-        [Fact]
-        public async Task Invoke_WithEndpoint_InvokesDelegate()
-        {
-            // Arrange
-            var httpContext = new DefaultHttpContext();
-            httpContext.RequestServices = new ServiceProvider();
-
-            var invoked = false;
-            RequestDelegate endpointFunc = (c) =>
-            {
-                invoked = true;
-                return Task.CompletedTask;
-            };
-
-            httpContext.SetEndpoint(new Endpoint(endpointFunc, EndpointMetadataCollection.Empty, "Test"));
-            
-            RequestDelegate next = (c) =>
-            {
+                calledNext = true;
                 return Task.CompletedTask;
             };
 
@@ -87,7 +38,61 @@ namespace Microsoft.AspNetCore.Routing
             await middleware.Invoke(httpContext);
 
             // Assert
-            Assert.True(invoked);
+            Assert.True(calledNext);
+        }
+
+        [Fact]
+        public async Task Invoke_NoEndpoint_NoOps()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.RequestServices = new ServiceProvider();
+            httpContext.SetEndpoint(null);
+
+            var calledNext = false;
+            RequestDelegate next = (c) =>
+            {
+                calledNext = true;
+                return Task.CompletedTask;
+            };
+
+            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, next, RouteOptions);
+
+            // Act
+            await middleware.Invoke(httpContext);
+
+            // Assert
+            Assert.True(calledNext);
+        }
+
+        [Fact]
+        public async Task Invoke_WithEndpoint_InvokesDelegate()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.RequestServices = new ServiceProvider();
+
+            var calledEndpoint = false;
+            RequestDelegate endpointFunc = (c) =>
+            {
+                calledEndpoint = true;
+                return Task.CompletedTask;
+            };
+
+            httpContext.SetEndpoint(new Endpoint(endpointFunc, EndpointMetadataCollection.Empty, "Test"));
+
+            RequestDelegate next = (c) =>
+            {
+                throw new InvalidTimeZoneException("Should not be called");
+            };
+
+            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, next, RouteOptions);
+
+            // Act
+            await middleware.Invoke(httpContext);
+
+            // Assert
+            Assert.True(calledEndpoint);
         }
 
         [Fact]
@@ -96,15 +101,21 @@ namespace Microsoft.AspNetCore.Routing
             // Arrange
             var expected = "Endpoint Test contains authorization metadata, but a middleware was not found that supports authorization." +
                 Environment.NewLine +
-                "Configure your application startup by adding app.UseAuthorization() inside the call to Configure(..) in the application startup code.";
+                "Configure your application startup by adding app.UseAuthorization() inside the call to Configure(..) in the application startup code. " +
+                "The call to app.UseAuthorization() must appear between app.UseRouting() and app.UseEndpoints(...).";
             var httpContext = new DefaultHttpContext
             {
                 RequestServices = new ServiceProvider()
             };
 
-            httpContext.SetEndpoint(new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(Mock.Of<IAuthorizeData>()), "Test"));
+            RequestDelegate throwIfCalled = (c) =>
+            {
+                throw new InvalidTimeZoneException("Should not be called");
+            };
 
-            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, _ => Task.CompletedTask, RouteOptions);
+            httpContext.SetEndpoint(new Endpoint(throwIfCalled, new EndpointMetadataCollection(Mock.Of<IAuthorizeData>()), "Test"));
+
+            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, throwIfCalled, RouteOptions);
 
             // Act & Assert
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.Invoke(httpContext));
@@ -122,16 +133,29 @@ namespace Microsoft.AspNetCore.Routing
                 RequestServices = new ServiceProvider()
             };
 
-            httpContext.SetEndpoint(new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(Mock.Of<IAuthorizeData>()), "Test"));
+            var calledEndpoint = false;
+            RequestDelegate endpointFunc = (c) =>
+            {
+                calledEndpoint = true;
+                return Task.CompletedTask;
+            };
+
+            httpContext.SetEndpoint(new Endpoint(endpointFunc, new EndpointMetadataCollection(Mock.Of<IAuthorizeData>()), "Test"));
 
             httpContext.Items[EndpointMiddleware.AuthorizationMiddlewareInvokedKey] = true;
 
-            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, _ => Task.CompletedTask, RouteOptions);
+            RequestDelegate next = (c) =>
+            {
+                throw new InvalidTimeZoneException("Should not be called");
+            };
 
-            // Act & Assert
+            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, next, RouteOptions);
+
+            // Act
             await middleware.Invoke(httpContext);
 
-            // If we got this far, we can sound the everything's OK alarm.
+            // Assert
+            Assert.True(calledEndpoint);
         }
 
         [Fact]
@@ -143,13 +167,29 @@ namespace Microsoft.AspNetCore.Routing
                 RequestServices = new ServiceProvider()
             };
 
-            httpContext.SetEndpoint(new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(Mock.Of<IAuthorizeData>()), "Test"));
+            var calledEndpoint = false;
+            RequestDelegate endpointFunc = (c) =>
+            {
+                calledEndpoint = true;
+                return Task.CompletedTask;
+            };
+
+            httpContext.SetEndpoint(new Endpoint(endpointFunc, new EndpointMetadataCollection(Mock.Of<IAuthorizeData>()), "Test"));
 
             var routeOptions = Options.Create(new RouteOptions { SuppressCheckForUnhandledSecurityMetadata = true });
-            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, _ => Task.CompletedTask, routeOptions);
 
-            // Act & Assert
+            RequestDelegate next = (c) =>
+            {
+                throw new InvalidTimeZoneException("Should not be called");
+            };
+
+            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, next, routeOptions);
+
+            // Act
             await middleware.Invoke(httpContext);
+
+            // Assert
+            Assert.True(calledEndpoint);
         }
 
         [Fact]
@@ -158,15 +198,21 @@ namespace Microsoft.AspNetCore.Routing
             // Arrange
             var expected = "Endpoint Test contains CORS metadata, but a middleware was not found that supports CORS." +
                 Environment.NewLine +
-                "Configure your application startup by adding app.UseCors() inside the call to Configure(..) in the application startup code.";
+                "Configure your application startup by adding app.UseCors() inside the call to Configure(..) in the application startup code. " +
+                "The call to app.UseAuthorization() must appear between app.UseRouting() and app.UseEndpoints(...).";
             var httpContext = new DefaultHttpContext
             {
                 RequestServices = new ServiceProvider()
             };
 
-            httpContext.SetEndpoint(new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(Mock.Of<ICorsMetadata>()), "Test"));
+            RequestDelegate throwIfCalled = (c) =>
+            {
+                throw new InvalidTimeZoneException("Should not be called");
+            };
 
-            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, _ => Task.CompletedTask, RouteOptions);
+            httpContext.SetEndpoint(new Endpoint(throwIfCalled, new EndpointMetadataCollection(Mock.Of<ICorsMetadata>()), "Test"));
+
+            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, throwIfCalled, RouteOptions);
 
             // Act & Assert
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => middleware.Invoke(httpContext));
@@ -184,16 +230,29 @@ namespace Microsoft.AspNetCore.Routing
                 RequestServices = new ServiceProvider()
             };
 
-            httpContext.SetEndpoint(new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(Mock.Of<ICorsMetadata>()), "Test"));
+            var calledEndpoint = false;
+            RequestDelegate endpointFunc = (c) =>
+            {
+                calledEndpoint = true;
+                return Task.CompletedTask;
+            };
+
+            httpContext.SetEndpoint(new Endpoint(endpointFunc, new EndpointMetadataCollection(Mock.Of<ICorsMetadata>()), "Test"));
 
             httpContext.Items[EndpointMiddleware.CorsMiddlewareInvokedKey] = true;
 
-            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, _ => Task.CompletedTask, RouteOptions);
+            RequestDelegate next = (c) =>
+            {
+                throw new InvalidTimeZoneException("Should not be called");
+            };
 
-            // Act & Assert
+            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, next, RouteOptions);
+
+            // Act
             await middleware.Invoke(httpContext);
 
-            // If we got this far, we can sound the everything's OK alarm.
+            // Assert
+            Assert.True(calledEndpoint);
         }
 
         [Fact]
@@ -205,13 +264,29 @@ namespace Microsoft.AspNetCore.Routing
                 RequestServices = new ServiceProvider()
             };
 
-            httpContext.SetEndpoint(new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(Mock.Of<IAuthorizeData>()), "Test"));
+            var calledEndpoint = false;
+            RequestDelegate endpointFunc = (c) =>
+            {
+                calledEndpoint = true;
+                return Task.CompletedTask;
+            };
+
+            httpContext.SetEndpoint(new Endpoint(endpointFunc, new EndpointMetadataCollection(Mock.Of<IAuthorizeData>()), "Test"));
 
             var routeOptions = Options.Create(new RouteOptions { SuppressCheckForUnhandledSecurityMetadata = true });
-            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, _ => Task.CompletedTask, routeOptions);
 
-            // Act & Assert
+            RequestDelegate next = (c) =>
+            {
+                throw new InvalidTimeZoneException("Should not be called");
+            };
+
+            var middleware = new EndpointMiddleware(NullLogger<EndpointMiddleware>.Instance, next, routeOptions);
+
+            // Act
             await middleware.Invoke(httpContext);
+
+            // Assert
+            Assert.True(calledEndpoint);
         }
 
         private class ServiceProvider : IServiceProvider

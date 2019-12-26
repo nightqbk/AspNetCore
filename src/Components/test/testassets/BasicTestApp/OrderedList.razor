@@ -10,10 +10,10 @@
     }
 </ol>
 
-@functions{
-    [Parameter] IEnumerable<TItem> Items { get; set; }
+@code{
+    [Parameter] public IEnumerable<TItem> Items { get; set; }
 
-    [Parameter] RenderFragment<Context> Template { get; set; }
+    [Parameter] public RenderFragment<Context> Template { get; set; }
 
     public class Context
     {

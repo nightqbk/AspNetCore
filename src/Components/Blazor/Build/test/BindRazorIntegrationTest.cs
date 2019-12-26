@@ -31,16 +31,16 @@ namespace Test
     public class MyComponent : ComponentBase
     {
         [Parameter]
-        int Value { get; set; }
+        public int Value { get; set; }
 
         [Parameter]
-        Action<int> ValueChanged { get; set; }
+        public Action<int> ValueChanged { get; set; }
     }
 }"));
 
             var component = CompileToComponent(@"
-<MyComponent bind-Value=""ParentValue"" />
-@functions {
+<MyComponent @bind-Value=""ParentValue"" />
+@code {
     public int ParentValue { get; set; } = 42;
 }");
 
@@ -68,7 +68,7 @@ namespace Test
 {
     public class MyComponent : ComponentBase, IComponent
     {
-        Task IComponent.SetParametersAsync(ParameterCollection parameters)
+        Task IComponent.SetParametersAsync(ParameterView parameters)
         {
             return Task.CompletedTask;
         }
@@ -76,8 +76,8 @@ namespace Test
 }"));
 
             var component = CompileToComponent(@"
-<MyComponent bind-Value=""ParentValue"" />
-@functions {
+<MyComponent @bind-Value=""ParentValue"" />
+@code {
     public int ParentValue { get; set; } = 42;
 }");
 
@@ -89,7 +89,7 @@ namespace Test
                 frames,
                 frame => AssertFrame.Component(frame, "Test.MyComponent", 3, 0),
                 frame => AssertFrame.Attribute(frame, "Value", 42, 1),
-                frame => AssertFrame.Attribute(frame, "ValueChanged", typeof(EventCallback<UIChangeEventArgs>), 2));
+                frame => AssertFrame.Attribute(frame, "ValueChanged", typeof(EventCallback<int>), 2));
         }
 
         [Fact]
@@ -105,16 +105,16 @@ namespace Test
     public class MyComponent : ComponentBase
     {
         [Parameter]
-        int Value { get; set; }
+        public int Value { get; set; }
 
         [Parameter]
-        Action<int> OnChanged { get; set; }
+        public Action<int> OnChanged { get; set; }
     }
 }"));
 
             var component = CompileToComponent(@"
-<MyComponent bind-Value-OnChanged=""ParentValue"" />
-@functions {
+<MyComponent @bind-Value=""ParentValue"" @bind-Value:event=""OnChanged"" />
+@code {
     public int ParentValue { get; set; } = 42;
 }");
 
@@ -142,7 +142,7 @@ namespace Test
 {
     public class MyComponent : ComponentBase, IComponent
     {
-        Task IComponent.SetParametersAsync(ParameterCollection parameters)
+        Task IComponent.SetParametersAsync(ParameterView parameters)
         {
             return Task.CompletedTask;
         }
@@ -150,8 +150,8 @@ namespace Test
 }"));
 
             var component = CompileToComponent(@"
-<MyComponent bind-Value-OnChanged=""ParentValue"" />
-@functions {
+<MyComponent @bind-Value=""ParentValue"" @bind-Value:event=""OnChanged"" />
+@code {
     public int ParentValue { get; set; } = 42;
 }");
 
@@ -163,7 +163,7 @@ namespace Test
                 frames,
                 frame => AssertFrame.Component(frame, "Test.MyComponent", 3, 0),
                 frame => AssertFrame.Attribute(frame, "Value", 42, 1),
-                frame => AssertFrame.Attribute(frame, "OnChanged", typeof(EventCallback<UIChangeEventArgs>), 2));
+                frame => AssertFrame.Attribute(frame, "OnChanged", typeof(EventCallback<int>), 2));
         }
 
         [Fact]
@@ -183,8 +183,8 @@ namespace Test
 }"));
 
             var component = CompileToComponent(@"
-<div bind=""@ParentValue"" />
-@functions {
+<div @bind=""@ParentValue"" />
+@code {
     public string ParentValue { get; set; } = ""hi"";
 }");
 
@@ -216,8 +216,8 @@ namespace Test
 }"));
 
             var component = CompileToComponent(@"
-<div bind-value=""@ParentValue"" />
-@functions {
+<div @bind-value=""@ParentValue"" />
+@code {
     public string ParentValue { get; set; } = ""hi"";
 }");
 
@@ -251,8 +251,8 @@ namespace Test
 
             // Act
             var result = CompileToCSharp(@"
-<div bind-value=""@ParentValue"" />
-@functions {
+<div @bind-value=""@ParentValue"" />
+@code {
     public string ParentValue { get; set; } = ""hi"";
 }");
 
@@ -260,7 +260,7 @@ namespace Test
             var diagnostic = Assert.Single(result.Diagnostics);
             Assert.Equal("RZ9989", diagnostic.Id);
             Assert.Equal(
-                "The attribute 'bind-value' was matched by multiple bind attributes. Duplicates:" + Environment.NewLine +
+                "The attribute '@bind-value' was matched by multiple bind attributes. Duplicates:" + Environment.NewLine +
                 "Test.BindAttributes" + Environment.NewLine +
                 "Test.BindAttributes",
                 diagnostic.GetMessage());
@@ -271,8 +271,9 @@ namespace Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<input bind=""@ParentValue"" />
-@functions {
+@using Microsoft.AspNetCore.Components.Web
+<input @bind=""@ParentValue"" />
+@code {
     public int ParentValue { get; set; } = 42;
 }");
 
@@ -292,8 +293,9 @@ namespace Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<input type=""text"" bind=""@CurrentDate"" format-value=""MM/dd/yyyy""/>
-@functions {
+@using Microsoft.AspNetCore.Components.Web
+<input type=""text"" @bind=""@CurrentDate"" @bind:format=""MM/dd/yyyy""/>
+@code {
     public DateTime CurrentDate { get; set; } = new DateTime(2018, 1, 1);
 }");
 
@@ -314,8 +316,9 @@ namespace Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<input type=""text"" bind=""@CurrentDate"" format-value=""@Format""/>
-@functions {
+@using Microsoft.AspNetCore.Components.Web
+<input type=""text"" @bind=""@CurrentDate"" @bind:format=""@Format""/>
+@code {
     public DateTime CurrentDate { get; set; } = new DateTime(2018, 1, 1);
 
     public string Format { get; set; } = ""MM/dd/yyyy"";
@@ -338,8 +341,9 @@ namespace Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<input type=""text"" bind=""@ParentValue"" />
-@functions {
+@using Microsoft.AspNetCore.Components.Web
+<input type=""text"" @bind=""@ParentValue"" />
+@code {
     public int ParentValue { get; set; } = 42;
 }");
 
@@ -360,8 +364,9 @@ namespace Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<input type=""checkbox"" bind=""@Enabled"" />
-@functions {
+@using Microsoft.AspNetCore.Components.Web
+<input type=""checkbox"" @bind=""@Enabled"" />
+@code {
     public bool Enabled { get; set; }
 }");
 
@@ -381,8 +386,8 @@ namespace Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<input type=""text"" bind-value-onchange=""@ParentValue"" />
-@functions {
+<input type=""text"" @bind-value=""@ParentValue"" @bind-value:event=""onchange"" />
+@code {
     public int ParentValue { get; set; } = 42;
 }");
 
@@ -403,8 +408,8 @@ namespace Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<input type=""text"" bind-value-onchange=""@CurrentDate"" format-value=""MM/dd"" />
-@functions {
+<input type=""text"" @bind-value=""@CurrentDate"" @bind-value:event=""onchange"" @bind-value:format=""MM/dd"" />
+@code {
     public DateTime CurrentDate { get; set; } = new DateTime(2018, 1, 1);
 }");
 
@@ -425,8 +430,8 @@ namespace Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<input type=""@(""text"")"" bind-value-onchange=""@ParentValue"" visible />
-@functions {
+<input type=""@(""text"")"" @bind-value=""@ParentValue"" @bind-value:event=""onchange"" visible />
+@code {
     public int ParentValue { get; set; } = 42;
 }");
 
@@ -448,8 +453,8 @@ namespace Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<input bind-value-onchange=""@ParentValue"" type=""text"" visible />
-@functions {
+<input @bind-value=""@ParentValue"" @bind-value:event=""onchange"" type=""text"" visible />
+@code {
     public int ParentValue { get; set; } = 42;
 }");
 
@@ -474,10 +479,10 @@ namespace Test
         {
             // Arrange
             var component = CompileToComponent(@"
-<div bind-value-onchange=""@ParentValue"">
+<div @bind-value=""@ParentValue"" @bind-value:event=""onchange"">
   <span>@(42.ToString())</span>
 </div>
-@functions {
+@code {
     public int ParentValue { get; set; } = 42;
 }");
 
@@ -501,8 +506,8 @@ namespace Test
         {
             // Arrange & Act
             var generated = CompileToCSharp(@"
-<input type=""text"" bind-first-second-third=""Text"" />
-@functions {
+<input type=""text"" @bind-first-second-third=""Text"" />
+@code {
     public string Text { get; set; } = ""text"";
 }");
 
@@ -516,8 +521,8 @@ namespace Test
         {
             // Arrange & Act
             var generated = CompileToCSharp(@"
-<input type=""text"" bind-first-=""Text"" />
-@functions {
+<input type=""text"" @bind-first-=""Text"" />
+@code {
     public string Text { get; set; } = ""text"";
 }");
 

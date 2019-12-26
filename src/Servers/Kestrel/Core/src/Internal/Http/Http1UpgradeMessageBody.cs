@@ -14,7 +14,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
     /// </summary>
     internal sealed class Http1UpgradeMessageBody : Http1MessageBody
     {
-        public bool _completed;
         public Http1UpgradeMessageBody(Http1Connection context)
             : base(context)
         {
@@ -26,19 +25,13 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
 
         public override ValueTask<ReadResult> ReadAsync(CancellationToken cancellationToken = default)
         {
-            if (_completed)
-            {
-                throw new InvalidOperationException("Reading is not allowed after the reader was completed.");
-            }
+            ThrowIfCompleted();
             return _context.Input.ReadAsync(cancellationToken);
         }
 
         public override bool TryRead(out ReadResult result)
         {
-            if (_completed)
-            {
-                throw new InvalidOperationException("Reading is not allowed after the reader was completed.");
-            }
+            ThrowIfCompleted();
             return _context.Input.TryRead(out result);
         }
 
@@ -64,11 +57,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
             _context.Input.CancelPendingRead();
         }
 
-        public override void OnWriterCompleted(Action<Exception, object> callback, object state)
-        {
-            _context.Input.OnWriterCompleted(callback, state);
-        }
-
         public override Task ConsumeAsync()
         {
             return Task.CompletedTask;
@@ -77,6 +65,16 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
         public override Task StopAsync()
         {
             return Task.CompletedTask;
+        }
+
+        public override bool TryReadInternal(out ReadResult readResult)
+        {
+            return _context.Input.TryRead(out readResult);
+        }
+
+        public override ValueTask<ReadResult> ReadAsyncInternal(CancellationToken cancellationToken = default)
+        {
+            return _context.Input.ReadAsync(cancellationToken);
         }
     }
 }

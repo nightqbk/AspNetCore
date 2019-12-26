@@ -154,26 +154,26 @@ public int SingleResultFailure(int x, int y)
 
 public IEnumerable<int> Batched(int count)
 {
-    for(var i = 0; i < count; i++)
+    for (var i = 0; i < count; i++)
     {
         yield return i;
     }
 }
 
-[return: Streamed] // This is a made-up attribute that is used to indicate to the .NET Binder that it should stream results
-public IEnumerable<int> Stream(int count)
+public async IAsyncEnumerable<int> Stream(int count)
 {
-    for(var i = 0; i < count; i++)
+    for (var i = 0; i < count; i++)
     {
+        await Task.Delay(10);
         yield return i;
     }
 }
 
-[return: Streamed] // This is a made-up attribute that is used to indicate to the .NET Binder that it should stream results
-public IEnumerable<int> StreamFailure(int count)
+public async IAsyncEnumerable<int> StreamFailure(int count)
 {
-    for(var i = 0; i < count; i++)
+    for (var i = 0; i < count; i++)
     {
+        await Task.Delay(10);
         yield return i;
     }
     throw new Exception("Ran out of data!");
@@ -185,17 +185,13 @@ public void NonBlocking(string caller)
     _callers.Add(caller);
 }
 
-public async Task<int> AddStream(ChannelReader<int> stream)
+public async Task<int> AddStream(IAsyncEnumerable<int> stream)
 {
     int sum = 0;
-    while (await stream.WaitToReadAsync())
+    await foreach(var item in stream)
     {
-        while (stream.TryRead(out var item))
-        {
-            sum += item;
-        }
+        sum += item;
     }
-
     return sum;
 }
 ```
@@ -486,6 +482,7 @@ A `Close` message is a JSON object with the following properties
 
 * `type` - A `Number` with the literal value `7`, indicating that this message is a `Close`.
 * `error` - An optional `String` encoding the error message.
+* `allowReconnect` - An optional `Boolean` indicating to clients with automatic reconnects enabled that they should attempt to reconnect after receiving the message.
 
 Example - A `Close` message without an error
 ```json
@@ -499,6 +496,15 @@ Example - A `Close` message with an error
 {
     "type": 7,
     "error": "Connection closed because of an error!"
+}
+```
+
+Example - A `Close` message with an error that allows automatic client reconnects.
+```json
+{
+    "type": 7,
+    "error": "Connection closed because of an error!",
+    "allowReconnect": true
 }
 ```
 
@@ -813,11 +819,12 @@ is decoded as follows:
 `Close` messages have the following structure
 
 ```
-[7, Error]
+[7, Error, AllowReconnect?]
 ```
 
 * `7` - Message Type - `7` indicates this is a `Close` message.
 * `Error` - Error - A `String` encoding the error for the message.
+* `AllowReconnect` - An optional `Boolean` indicating to clients with automatic reconnects enabled that they should attempt to reconnect after receiving the message.
 
 Examples:
 
@@ -836,6 +843,23 @@ is decoded as follows:
 * `0x78` - `x`
 * `0x79` - `y`
 * `0x7a` - `z`
+
+#### Close message that allows automatic client reconnects
+
+The following payload:
+```
+0x93 0x07 0xa3 0x78 0x79 0x7a 0xc3
+```
+
+is decoded as follows:
+
+* `0x93` - 3-element array
+* `0x07` - `7` (Message Type - `Close` message)
+* `0xa3` - string of length 3 (Error)
+* `0x78` - `x`
+* `0x79` - `y`
+* `0x7a` - `z`
+* `0xc3` - `True` (AllowReconnect)
 
 ### MessagePack Headers Encoding
 

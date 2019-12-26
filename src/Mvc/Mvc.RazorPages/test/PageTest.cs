@@ -1700,14 +1700,17 @@ namespace Microsoft.AspNetCore.Mvc.RazorPages
         public void PartialView_WithName()
         {
             // Arrange
-            var viewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), new ModelStateDictionary());
+            var modelMetadataProvider = new EmptyModelMetadataProvider();
+            var viewData = new ViewDataDictionary(modelMetadataProvider, new ModelStateDictionary());
             var pageModel = new TestPage
             {
                 ViewContext = new ViewContext
                 {
                     ViewData = viewData
-                }
+                },
+                MetadataProvider = modelMetadataProvider,
             };
+            viewData.Model = pageModel;
 
             // Act
             var result = pageModel.Partial("LoginStatus");
@@ -1715,21 +1718,24 @@ namespace Microsoft.AspNetCore.Mvc.RazorPages
             // Assert
             Assert.NotNull(result);
             Assert.Equal("LoginStatus", result.ViewName);
-            Assert.Same(viewData, result.ViewData);
+            Assert.Null(result.Model);
         }
 
         [Fact]
         public void PartialView_WithNameAndModel()
         {
             // Arrange
-            var viewData = new ViewDataDictionary(new EmptyModelMetadataProvider(), new ModelStateDictionary());
+            var modelMetadataProvider = new EmptyModelMetadataProvider();
+            var viewData = new ViewDataDictionary(modelMetadataProvider, new ModelStateDictionary());
             var pageModel = new TestPage
             {
                 ViewContext = new ViewContext
                 {
                     ViewData = viewData
-                }
+                },
+                MetadataProvider = modelMetadataProvider,
             };
+            viewData.Model = pageModel;
             var model = new { Username = "Admin" };
 
             // Act
@@ -1739,7 +1745,6 @@ namespace Microsoft.AspNetCore.Mvc.RazorPages
             Assert.NotNull(result);
             Assert.Equal("LoginStatus", result.ViewName);
             Assert.Equal(model, result.Model);
-            Assert.Same(viewData, result.ViewData);
         }
 
         [Fact]
@@ -1810,6 +1815,35 @@ namespace Microsoft.AspNetCore.Mvc.RazorPages
             Assert.Equal(typeof(Guid), result.ViewComponentType);
             Assert.Same(arguments, result.Arguments);
             Assert.Same(viewData, result.ViewData);
+        }
+
+        [Fact]
+        public async Task TryUpdateModel_ReturnsFalse_IfValueProviderFactoryThrows()
+        {
+            // Arrange
+            var valueProviderFactory = new Mock<IValueProviderFactory>();
+            valueProviderFactory.Setup(f => f.CreateValueProviderAsync(It.IsAny<ValueProviderFactoryContext>()))
+                .Throws(new ValueProviderException("some error"));
+
+            var pageModel = new TestPage
+            {
+                PageContext = new PageContext
+                {
+                    ValueProviderFactories = new[] { valueProviderFactory.Object },
+                }
+            };
+
+            var model = new object();
+
+            // Act
+            var result = await pageModel.TryUpdateModelAsync(model);
+
+            // Assert
+            Assert.False(result);
+            var modelState = Assert.Single(pageModel.ModelState);
+            Assert.Empty(modelState.Key);
+            var error = Assert.Single(modelState.Value.Errors);
+            Assert.Equal("some error", error.ErrorMessage);
         }
 
         public static IEnumerable<object[]> RedirectTestData

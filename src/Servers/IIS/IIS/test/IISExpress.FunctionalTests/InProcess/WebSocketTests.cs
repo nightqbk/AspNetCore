@@ -7,13 +7,13 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Testing.xunit;
+using Microsoft.AspNetCore.Testing;
 using Xunit;
 
-namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
+namespace Microsoft.AspNetCore.Server.IIS.FunctionalTests
 {
     [Collection(IISTestSiteCollection.Name)]
-    [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, SkipReason = "No supported on this platform")]
+    [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8, SkipReason = "No WebSocket supported on Win7")]
     public class WebSocketsTests
     {
         private readonly string _webSocketUri;

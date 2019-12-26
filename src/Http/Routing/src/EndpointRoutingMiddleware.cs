@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,9 +14,12 @@ namespace Microsoft.AspNetCore.Routing
 {
     internal sealed class EndpointRoutingMiddleware
     {
+        private const string DiagnosticsEndpointMatchedKey = "Microsoft.AspNetCore.Routing.EndpointMatched";
+
         private readonly MatcherFactory _matcherFactory;
         private readonly ILogger _logger;
         private readonly EndpointDataSource _endpointDataSource;
+        private readonly DiagnosticListener _diagnosticListener;
         private readonly RequestDelegate _next;
 
         private Task<Matcher> _initializationTask;
@@ -24,43 +28,29 @@ namespace Microsoft.AspNetCore.Routing
             MatcherFactory matcherFactory,
             ILogger<EndpointRoutingMiddleware> logger,
             IEndpointRouteBuilder endpointRouteBuilder,
+            DiagnosticListener diagnosticListener,
             RequestDelegate next)
         {
-            if (matcherFactory == null)
-            {
-                throw new ArgumentNullException(nameof(matcherFactory));
-            }
-
-            if (logger == null)
-            {
-                throw new ArgumentNullException(nameof(logger));
-            }
-
             if (endpointRouteBuilder == null)
             {
                 throw new ArgumentNullException(nameof(endpointRouteBuilder));
             }
 
-            if (next == null)
-            {
-                throw new ArgumentNullException(nameof(next));
-            }
-
-            _matcherFactory = matcherFactory;
-            _logger = logger;
-            _next = next;
+            _matcherFactory = matcherFactory ?? throw new ArgumentNullException(nameof(matcherFactory));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _diagnosticListener = diagnosticListener ?? throw new ArgumentNullException(nameof(diagnosticListener));
+            _next = next ?? throw new ArgumentNullException(nameof(next));
 
             _endpointDataSource = new CompositeEndpointDataSource(endpointRouteBuilder.DataSources);
         }
 
         public Task Invoke(HttpContext httpContext)
         {
-            var feature = new EndpointSelectorContext(httpContext);
-
             // There's already an endpoint, skip maching completely
-            if (feature.Endpoint != null)
+            var endpoint = httpContext.GetEndpoint();
+            if (endpoint != null)
             {
-                Log.MatchSkipped(_logger, feature.Endpoint);
+                Log.MatchSkipped(_logger, endpoint);
                 return _next(httpContext);
             }
 
@@ -69,44 +59,52 @@ namespace Microsoft.AspNetCore.Routing
             var matcherTask = InitializeAsync();
             if (!matcherTask.IsCompletedSuccessfully)
             {
-                return AwaitMatcher(this, httpContext, feature, matcherTask);
+                return AwaitMatcher(this, httpContext, matcherTask);
             }
 
-            var matchTask = matcherTask.Result.MatchAsync(httpContext, feature);
+            var matchTask = matcherTask.Result.MatchAsync(httpContext);
             if (!matchTask.IsCompletedSuccessfully)
             {
-                return AwaitMatch(this, httpContext, feature, matchTask);
+                return AwaitMatch(this, httpContext, matchTask);
             }
 
-            return SetRoutingAndContinue(httpContext, feature);
+            return SetRoutingAndContinue(httpContext);
 
             // Awaited fallbacks for when the Tasks do not synchronously complete
-            static async Task AwaitMatcher(EndpointRoutingMiddleware middleware, HttpContext httpContext, EndpointSelectorContext feature, Task<Matcher> matcherTask)
+            static async Task AwaitMatcher(EndpointRoutingMiddleware middleware, HttpContext httpContext, Task<Matcher> matcherTask)
             {
                 var matcher = await matcherTask;
-                await matcher.MatchAsync(httpContext, feature);
-                await middleware.SetRoutingAndContinue(httpContext, feature);
+                await matcher.MatchAsync(httpContext);
+                await middleware.SetRoutingAndContinue(httpContext);
             }
 
-            static async Task AwaitMatch(EndpointRoutingMiddleware middleware, HttpContext httpContext, EndpointSelectorContext feature, Task matchTask)
+            static async Task AwaitMatch(EndpointRoutingMiddleware middleware, HttpContext httpContext, Task matchTask)
             {
                 await matchTask;
-                await middleware.SetRoutingAndContinue(httpContext, feature);
+                await middleware.SetRoutingAndContinue(httpContext);
             }
 
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Task SetRoutingAndContinue(HttpContext httpContext, EndpointSelectorContext feature)
+        private Task SetRoutingAndContinue(HttpContext httpContext)
         {
             // If there was no mutation of the endpoint then log failure
-            if (feature.Endpoint is null)
+            var endpoint = httpContext.GetEndpoint();
+            if (endpoint == null)
             {
                 Log.MatchFailure(_logger);
             }
             else
             {
-                Log.MatchSuccess(_logger, feature);
+                // Raise an event if the route matched
+                if (_diagnosticListener.IsEnabled() && _diagnosticListener.IsEnabled(DiagnosticsEndpointMatchedKey))
+                {
+                    // We're just going to send the HttpContext since it has all of the relevant information
+                    _diagnosticListener.Write(DiagnosticsEndpointMatchedKey, httpContext);
+                }
+
+                Log.MatchSuccess(_logger, endpoint);
             }
 
             return _next(httpContext);
@@ -115,8 +113,8 @@ namespace Microsoft.AspNetCore.Routing
         // Initialization is async to avoid blocking threads while reflection and things
         // of that nature take place.
         //
-        // We've seen cases where startup is very slow if we  allow multiple threads to race 
-        // while initializing the set of endpoints/routes. Doing CPU intensive work is a 
+        // We've seen cases where startup is very slow if we  allow multiple threads to race
+        // while initializing the set of endpoints/routes. Doing CPU intensive work is a
         // blocking operation if you have a low core count and enough work to do.
         private Task<Matcher> InitializeAsync()
         {
@@ -184,9 +182,9 @@ namespace Microsoft.AspNetCore.Routing
                 new EventId(3, "MatchingSkipped"),
                 "Endpoint '{EndpointName}' already set, skipping route matching.");
 
-            public static void MatchSuccess(ILogger logger, EndpointSelectorContext context)
+            public static void MatchSuccess(ILogger logger, Endpoint endpoint)
             {
-                _matchSuccess(logger, context.Endpoint.DisplayName, null);
+                _matchSuccess(logger, endpoint.DisplayName, null);
             }
 
             public static void MatchFailure(ILogger logger)

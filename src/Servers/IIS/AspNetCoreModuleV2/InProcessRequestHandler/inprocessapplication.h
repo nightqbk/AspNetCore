@@ -15,8 +15,6 @@ typedef BOOL(WINAPI * PFN_SHUTDOWN_HANDLER) (void* pvShutdownHandlerContext);
 typedef REQUEST_NOTIFICATION_STATUS(WINAPI * PFN_ASYNC_COMPLETION_HANDLER)(void *pvManagedHttpContext, HRESULT hrCompletionStatus, DWORD cbCompletion);
 typedef void(WINAPI * PFN_REQUESTS_DRAINED_HANDLER) (void* pvShutdownHandlerContext);
 
-#define DOTNETCORE_STARTUP_HOOK  L"DOTNET_STARTUP_HOOKS"
-#define ASPNETCORE_STARTUP_ASSEMBLY L"Microsoft.AspNetCore.Server.IIS"
 class IN_PROCESS_APPLICATION : public InProcessApplicationBase
 {
 public:
@@ -58,7 +56,7 @@ public:
     ExecuteApplication();
 
     HRESULT
-    LoadManagedApplication();
+    LoadManagedApplication(ErrorContext& errorContext);
 
     void
     QueueStop();
@@ -115,7 +113,8 @@ public:
         IHttpApplication& pHttpApplication,
         APPLICATION_PARAMETER* pParameters,
         DWORD nParameters,
-        std::unique_ptr<IN_PROCESS_APPLICATION, IAPPLICATION_DELETER>& application);
+        std::unique_ptr<IN_PROCESS_APPLICATION, IAPPLICATION_DELETER>& application,
+        ErrorContext& errorContext);
 
 private:
     struct ExecuteClrContext: std::enable_shared_from_this<ExecuteClrContext>

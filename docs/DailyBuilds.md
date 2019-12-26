@@ -13,11 +13,7 @@ If you want to download the latest daily build and use it in a project, then you
   <configuration>
       <packageSources>
           <clear />
-          <add key="dotnet-core" value="https://dotnetfeed.blob.core.windows.net/dotnet-core/index.json" />
-          <add key="extensions" value="https://dotnetfeed.blob.core.windows.net/aspnet-extensions/index.json" />
-          <add key="entityframeworkcore" value="https://dotnetfeed.blob.core.windows.net/aspnet-entityframeworkcore/index.json" />
-          <add key="aspnetcore-tooling" value="https://dotnetfeed.blob.core.windows.net/aspnet-aspnetcore-tooling/index.json" />
-          <add key="aspnetcore" value="https://dotnetfeed.blob.core.windows.net/aspnet-aspnetcore/index.json" />
+          <add key="aspnetcore" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet5/nuget/v3/index.json" />
           <add key="NuGet.org" value="https://api.nuget.org/v3/index.json" />
       </packageSources>
   </configuration>
@@ -33,4 +29,4 @@ These are available in the [Visual Studio Preview](https://www.visualstudio.com/
 * *Enable Source Link support* in Visual Studio should be enabled.
 * *Enable source server support* in Visual should be enabled.
 * *Enable Just My Code* should be disabled
-* Add https://dotnet.myget.org/F/aspnetcore-dev/symbols to the list of symbol servers in the Visual Studio Debugging options
+* Under Symbols enable the *Microsoft Symbol Servers* setting.

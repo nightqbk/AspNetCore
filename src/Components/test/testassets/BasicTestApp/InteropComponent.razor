@@ -1,9 +1,10 @@
 @using Microsoft.JSInterop
 @using BasicTestApp.InteropTest
 @using System.Runtime.InteropServices
+@using System.Text.Json
 @inject IJSRuntime JSRuntime
 
-<button id="btn-interop" onclick="@InvokeInteropAsync">Invoke interop!</button>
+<button id="btn-interop" @onclick="InvokeInteropAsync">Invoke interop!</button>
 
 <div>
     <h1>Invocations</h1>
@@ -51,8 +52,7 @@
     <p id="done-with-interop">Done with interop.</p>
 }
 
-@functions {
-
+@code {
     public IDictionary<string, string> ReturnValues { get; set; } = new Dictionary<string, string>();
     public IDictionary<string, string> Invocations { get; set; } = new Dictionary<string, string>();
 
@@ -70,13 +70,15 @@
         var shouldSupportSyncInterop = RuntimeInformation.IsOSPlatform(OSPlatform.Create("WEBASSEMBLY"));
         var testDTOTOPassByRef = new TestDTO(nonSerializedValue: 123);
         var instanceMethodsTarget = new JavaScriptInterop();
+        var genericType = new JavaScriptInterop.GenericType<string> { Value = "Initial value" };
 
         Console.WriteLine("Starting interop invocations.");
-        await JSRuntime.InvokeAsync<object>(
+        await JSRuntime.InvokeVoidAsync(
             "jsInteropTests.invokeDotNetInteropMethodsAsync",
             shouldSupportSyncInterop,
-            new DotNetObjectRef(testDTOTOPassByRef),
-            new DotNetObjectRef(instanceMethodsTarget));
+            DotNetObjectReference.Create(testDTOTOPassByRef),
+            DotNetObjectReference.Create(instanceMethodsTarget),
+            DotNetObjectReference.Create(genericType));
 
         if (shouldSupportSyncInterop)
         {
@@ -84,14 +86,14 @@
         }
 
         Console.WriteLine("Showing interop invocation results.");
-        var collectResults = await JSRuntime.InvokeAsync<Dictionary<string,string>>("jsInteropTests.collectInteropResults");
+        var collectResults = await JSRuntime.InvokeAsync<Dictionary<string, string>>("jsInteropTests.collectInteropResults");
 
-        ReturnValues = collectResults.ToDictionary(kvp => kvp.Key,kvp => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(kvp.Value)));
+        ReturnValues = collectResults.ToDictionary(kvp => kvp.Key, kvp => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(kvp.Value)));
 
         var invocations = new Dictionary<string, string>();
         foreach (var interopResult in JavaScriptInterop.Invocations)
         {
-            var interopResultValue = Json.Serialize(interopResult.Value);
+            var interopResultValue = JsonSerializer.Serialize(interopResult.Value, TestJsonSerializerOptionsProvider.Options);
             invocations[interopResult.Key] = interopResultValue;
         }
 
@@ -114,13 +116,15 @@
         }
 
         var passDotNetObjectByRef = new TestDTO(99999);
-        var passDotNetObjectByRefArg = new Dictionary<string, object>
+        var passDotNetObjectByRefArg = new PassDotNetObjectByRefArgs
         {
-            { "stringValue", "My string" },
-            { "testDto", new DotNetObjectRef(passDotNetObjectByRef) },
+            StringValue = "My string",
+            TestDto = DotNetObjectReference.Create(passDotNetObjectByRef),
         };
-        ReceiveDotNetObjectByRefAsyncResult = await JSRuntime.InvokeAsync<Dictionary<string, object>>("receiveDotNetObjectByRefAsync", passDotNetObjectByRefArg);
-        ReceiveDotNetObjectByRefAsyncResult["testDto"] = ReceiveDotNetObjectByRefAsyncResult["testDto"] == passDotNetObjectByRef ? "Same" : "Different";
+        var result = await JSRuntime.InvokeAsync<ReceiveDotNetObjectByRefArgs>("receiveDotNetObjectByRefAsync", passDotNetObjectByRefArg);
+        ReceiveDotNetObjectByRefAsyncResult["stringValueUpper"] = result.StringValueUpper;
+        ReceiveDotNetObjectByRefAsyncResult["testDtoNonSerializedValue"] = result.TestDtoNonSerializedValue;
+        ReceiveDotNetObjectByRefAsyncResult["testDto"] = result.TestDto.Value == passDotNetObjectByRef ? "Same" : "Different";
 
         ReturnValues["returnPrimitiveAsync"] = (await JSRuntime.InvokeAsync<int>("returnPrimitiveAsync")).ToString();
         ReturnValues["returnArrayAsync"] = string.Join(",", (await JSRuntime.InvokeAsync<Segment[]>("returnArrayAsync")).Select(x => x.Source).ToArray());
@@ -148,12 +152,30 @@
         }
 
         var passDotNetObjectByRef = new TestDTO(99999);
-        var passDotNetObjectByRefArg = new Dictionary<string, object>
+        var passDotNetObjectByRefArg = new PassDotNetObjectByRefArgs
         {
-            { "stringValue", "My string" },
-            { "testDto", new DotNetObjectRef(passDotNetObjectByRef) },
+            StringValue = "My string",
+            TestDto = DotNetObjectReference.Create(passDotNetObjectByRef),
         };
-        ReceiveDotNetObjectByRefResult = inProcRuntime.Invoke<Dictionary<string, object>>("receiveDotNetObjectByRef", passDotNetObjectByRefArg);
-        ReceiveDotNetObjectByRefResult["testDto"] = ReceiveDotNetObjectByRefResult["testDto"] == passDotNetObjectByRef ? "Same" : "Different";
+        var result = inProcRuntime.Invoke<ReceiveDotNetObjectByRefArgs>("receiveDotNetObjectByRef", passDotNetObjectByRefArg);
+        ReceiveDotNetObjectByRefResult["stringValueUpper"] = result.StringValueUpper;
+        ReceiveDotNetObjectByRefResult["testDtoNonSerializedValue"] = result.TestDtoNonSerializedValue;
+        ReceiveDotNetObjectByRefResult["testDto"] = result.TestDto.Value == passDotNetObjectByRef ? "Same" : "Different";
+    }
+
+    public class PassDotNetObjectByRefArgs
+    {
+        public string StringValue { get; set; }
+
+        public DotNetObjectReference<TestDTO> TestDto { get; set; }
+    }
+
+    public class ReceiveDotNetObjectByRefArgs
+    {
+        public string StringValueUpper { get; set; }
+
+        public int TestDtoNonSerializedValue { get; set; }
+
+        public DotNetObjectReference<TestDTO> TestDto { get; set; }
     }
 }

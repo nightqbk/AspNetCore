@@ -4,15 +4,16 @@
 using System;
 using System.Collections.Generic;
 using System.IO.Pipelines;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure;
-using Microsoft.AspNetCore.Server.Kestrel.Transport.Abstractions.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -20,30 +21,34 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core
 {
     public class KestrelServer : IServer
     {
-        private readonly List<ITransport> _transports = new List<ITransport>();
+        private readonly List<(IConnectionListener, Task)> _transports = new List<(IConnectionListener, Task)>();
         private readonly IServerAddressesFeature _serverAddresses;
-        private readonly ITransportFactory _transportFactory;
+        private readonly List<IConnectionListenerFactory> _transportFactories;
 
         private bool _hasStarted;
         private int _stopping;
         private readonly TaskCompletionSource<object> _stoppedTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-#pragma warning disable PUB0001 // Pubternal type in public API
-        public KestrelServer(IOptions<KestrelServerOptions> options, ITransportFactory transportFactory, ILoggerFactory loggerFactory)
-#pragma warning restore PUB0001
-            : this(transportFactory, CreateServiceContext(options, loggerFactory))
+        public KestrelServer(IOptions<KestrelServerOptions> options, IEnumerable<IConnectionListenerFactory> transportFactories, ILoggerFactory loggerFactory)
+            : this(transportFactories, CreateServiceContext(options, loggerFactory))
         {
         }
 
         // For testing
-        internal KestrelServer(ITransportFactory transportFactory, ServiceContext serviceContext)
+        internal KestrelServer(IEnumerable<IConnectionListenerFactory> transportFactories, ServiceContext serviceContext)
         {
-            if (transportFactory == null)
+            if (transportFactories == null)
             {
-                throw new ArgumentNullException(nameof(transportFactory));
+                throw new ArgumentNullException(nameof(transportFactories));
             }
 
-            _transportFactory = transportFactory;
+            _transportFactories = transportFactories.ToList();
+
+            if (_transportFactories.Count == 0)
+            {
+                throw new InvalidOperationException(CoreStrings.TransportNotFound);
+            }
+
             ServiceContext = serviceContext;
 
             Features = new FeatureCollection();
@@ -79,27 +84,11 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core
                 DebuggerWrapper.Singleton,
                 trace);
 
-            // TODO: This logic will eventually move into the IConnectionHandler<T> and off
-            // the service context once we get to https://github.com/aspnet/KestrelHttpServer/issues/1662
-            PipeScheduler scheduler = null;
-            switch (serverOptions.ApplicationSchedulingMode)
-            {
-                case SchedulingMode.Default:
-                case SchedulingMode.ThreadPool:
-                    scheduler = PipeScheduler.ThreadPool;
-                    break;
-                case SchedulingMode.Inline:
-                    scheduler = PipeScheduler.Inline;
-                    break;
-                default:
-                    throw new NotSupportedException(CoreStrings.FormatUnknownTransportMode(serverOptions.ApplicationSchedulingMode));
-            }
-
             return new ServiceContext
             {
                 Log = trace,
                 HttpParser = new HttpParser<Http1ParsingHandler>(trace.IsEnabled(LogLevel.Information)),
-                Scheduler = scheduler,
+                Scheduler = PipeScheduler.ThreadPool,
                 SystemClock = heartbeatManager,
                 DateHeaderValueManager = dateHeaderValueManager,
                 ConnectionManager = connectionManager,
@@ -138,12 +127,12 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core
 
                 ServiceContext.Heartbeat?.Start();
 
-                async Task OnBind(ListenOptions endpoint)
+                async Task OnBind(ListenOptions options)
                 {
                     // Add the HTTP middleware as the terminal connection middleware
-                    endpoint.UseHttpServer(endpoint.ConnectionAdapters, ServiceContext, application, endpoint.Protocols);
+                    options.UseHttpServer(ServiceContext, application, options.Protocols);
 
-                    var connectionDelegate = endpoint.Build();
+                    var connectionDelegate = options.Build();
 
                     // Add the connection limit middleware
                     if (Options.Limits.MaxConcurrentConnections.HasValue)
@@ -152,10 +141,36 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core
                     }
 
                     var connectionDispatcher = new ConnectionDispatcher(ServiceContext, connectionDelegate);
-                    var transport = _transportFactory.Create(endpoint, connectionDispatcher);
-                    _transports.Add(transport);
 
-                    await transport.BindAsync().ConfigureAwait(false);
+                    IConnectionListenerFactory factory = null;
+                    if (options.Protocols >= HttpProtocols.Http3)
+                    {
+                        foreach (var transportFactory in _transportFactories)
+                        {
+                            if (transportFactory is IMultiplexedConnectionListenerFactory)
+                            {
+                                // Don't break early. Always use the last registered factory.
+                                factory = transportFactory;
+                            }
+                        }
+
+                        if (factory == null)
+                        {
+                            throw new InvalidOperationException(CoreStrings.QuicTransportNotFound);
+                        }
+                    }
+                    else
+                    {
+                        factory = _transportFactories.Last();
+                    }
+
+                    var transport = await factory.BindAsync(options.EndPoint).ConfigureAwait(false);
+
+                    // Update the endpoint
+                    options.EndPoint = transport.EndPoint;
+                    var acceptLoopTask = connectionDispatcher.StartAcceptingConnections(transport);
+
+                    _transports.Add((transport, acceptLoopTask));
                 }
 
                 await AddressBinder.BindAsync(_serverAddresses, Options, Trace, OnBind).ConfigureAwait(false);
@@ -182,8 +197,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core
                 var tasks = new Task[_transports.Count];
                 for (int i = 0; i < _transports.Count; i++)
                 {
-                    tasks[i] = _transports[i].UnbindAsync();
+                    (IConnectionListener listener, Task acceptLoop) = _transports[i];
+                    tasks[i] = Task.WhenAll(listener.UnbindAsync(cancellationToken).AsTask(), acceptLoop);
                 }
+
                 await Task.WhenAll(tasks).ConfigureAwait(false);
 
                 if (!await ConnectionManager.CloseAllConnectionsAsync(cancellationToken).ConfigureAwait(false))
@@ -198,8 +215,10 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core
 
                 for (int i = 0; i < _transports.Count; i++)
                 {
-                    tasks[i] = _transports[i].StopAsync();
+                    (IConnectionListener listener, Task acceptLoop) = _transports[i];
+                    tasks[i] = listener.DisposeAsync().AsTask();
                 }
+
                 await Task.WhenAll(tasks).ConfigureAwait(false);
 
                 ServiceContext.Heartbeat?.Dispose();

@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Server.IntegrationTesting;
 using Microsoft.AspNetCore.Server.IntegrationTesting.IIS;
 using Xunit;
 
-namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
+namespace Microsoft.AspNetCore.Server.IIS.FunctionalTests
 {
     /// <summary>
     /// This type just maps collection names to available fixtures
@@ -20,7 +20,7 @@ namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
     public class PublishedSitesFixture : IDisposable
     {
         public PublishedApplicationPublisher InProcessTestSite { get; } = new PublishedApplicationPublisher(Helpers.GetInProcessTestSitesName());
-        public PublishedApplicationPublisher OutOfProcessTestSite { get; } = new PublishedApplicationPublisher(Helpers.GetOutOfProcessTestSitesName());
+        public PublishedApplicationPublisher OutOfProcessTestSite { get; } = new PublishedApplicationPublisher(Helpers.GetInProcessTestSitesName());
 
         public void Dispose()
         {
@@ -48,7 +48,7 @@ namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
                     RuntimeFlavor = RuntimeFlavor.CoreClr,
                     RuntimeArchitecture = RuntimeArchitecture.x64,
                     HostingModel = hostingModel,
-                    TargetFramework = Tfm.NetCoreApp30
+                    TargetFramework = Tfm.NetCoreApp50
                 });
         }
 

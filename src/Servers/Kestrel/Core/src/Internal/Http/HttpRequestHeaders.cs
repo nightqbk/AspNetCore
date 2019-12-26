@@ -69,7 +69,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void AppendContentLength(Span<byte> value)
+        private void AppendContentLength(ReadOnlySpan<byte> value)
         {
             if (_contentLength.HasValue)
             {
@@ -101,18 +101,9 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private unsafe void AppendUnknownHeaders(Span<byte> name, string valueString)
+        private unsafe void AppendUnknownHeaders(ReadOnlySpan<byte> name, string valueString)
         {
-            string key = new string('\0', name.Length);
-            fixed (byte* pKeyBytes = name)
-            fixed (char* keyBuffer = key)
-            {
-                if (!StringUtilities.TryGetAsciiString(pKeyBytes, keyBuffer, name.Length))
-                {
-                    BadHttpRequestException.Throw(RequestRejectionReason.InvalidCharactersInHeaderName);
-                }
-            }
-
+            string key = name.GetHeaderName();
             Unknown.TryGetValue(key, out var existing);
             Unknown[key] = AppendValue(existing, valueString);
         }
@@ -141,11 +132,11 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
                 _collection = collection;
                 _bits = collection._bits;
                 _next = 0;
-                _current = default(KeyValuePair<string, StringValues>);
+                _current = default;
                 _hasUnknown = collection.MaybeUnknown != null;
                 _unknownEnumerator = _hasUnknown
                     ? collection.MaybeUnknown.GetEnumerator()
-                    : default(Dictionary<string, StringValues>.Enumerator);
+                    : default;
             }
 
             public KeyValuePair<string, StringValues> Current => _current;

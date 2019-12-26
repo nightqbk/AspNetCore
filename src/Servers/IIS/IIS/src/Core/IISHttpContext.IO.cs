@@ -3,17 +3,18 @@
 
 using System;
 using System.Buffers;
-using System.Net.Http;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 
 namespace Microsoft.AspNetCore.Server.IIS.Core
 {
     internal partial class IISHttpContext
     {
+        private long _consumedBytes;
+
         /// <summary>
         /// Reads data from the Input pipe to the user.
         /// </summary>
@@ -22,7 +23,7 @@ namespace Microsoft.AspNetCore.Server.IIS.Core
         /// <returns></returns>
         internal async ValueTask<int> ReadAsync(Memory<byte> memory, CancellationToken cancellationToken)
         {
-            if (!_hasRequestReadingStarted)
+            if (!HasStartedConsumingRequestBody)
             {
                 InitializeRequestIO();
             }
@@ -50,6 +51,16 @@ namespace Microsoft.AspNetCore.Server.IIS.Core
                     _bodyInputPipe.Reader.AdvanceTo(readableBuffer.End, readableBuffer.End);
                 }
             }
+        }
+
+        internal Task CopyToAsync(Stream destination, CancellationToken cancellationToken)
+        {
+            if (!HasStartedConsumingRequestBody)
+            {
+                InitializeRequestIO();
+            }
+
+            return _bodyInputPipe.Reader.CopyToAsync(destination, cancellationToken);
         }
 
         /// <summary>
@@ -105,7 +116,13 @@ namespace Microsoft.AspNetCore.Server.IIS.Core
                     // Read was not canceled because of incoming write or IO stopping
                     if (read != -1)
                     {
+                        _consumedBytes += read;
                         _bodyInputPipe.Writer.Advance(read);
+                    }
+
+                    if (_consumedBytes > MaxRequestBodySize)
+                    {
+                        BadHttpRequestException.Throw(RequestRejectionReason.RequestBodyTooLarge);
                     }
 
                     var result = await _bodyInputPipe.Writer.FlushAsync();

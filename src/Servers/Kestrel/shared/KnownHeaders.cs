@@ -145,6 +145,7 @@ namespace CodeGenerator
             {
                 "Accept-Ranges",
                 "Age",
+                "Alt-Svc",
                 "ETag",
                 "Location",
                 "Proxy-Authenticate",
@@ -579,6 +580,7 @@ using System;
 using System.Collections.Generic;
 using System.Buffers;
 using System.IO.Pipelines;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Primitives;
@@ -642,7 +644,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
         }}")}
         protected override int GetCountFast()
         {{
-            return (_contentLength.HasValue ? 1 : 0 ) + BitCount(_bits) + (MaybeUnknown?.Count ?? 0);
+            return (_contentLength.HasValue ? 1 : 0 ) + BitOperations.PopCount((ulong)_bits) + (MaybeUnknown?.Count ?? 0);
         }}
 
         protected override bool TryGetValueFast(string key, out StringValues value)
@@ -824,7 +826,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
             _contentLength = null;
             var tempBits = _bits;
             _bits = 0;
-            if(HttpHeaders.BitCount(tempBits) > 12)
+            if(BitOperations.PopCount((ulong)tempBits) > 12)
             {{
                 _headers = default(HeaderReferences);
                 return;
@@ -950,7 +952,7 @@ $@"        private void Clear(long bitsToClear)
             }} while (tempBits != 0);
         }}" : "")}{(loop.ClassName == "HttpRequestHeaders" ? $@"
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        public unsafe void Append(Span<byte> name, Span<byte> value)
+        public unsafe void Append(ReadOnlySpan<byte> name, ReadOnlySpan<byte> value)
         {{
             ref byte nameStart = ref MemoryMarshal.GetReference(name);
             ref StringValues values = ref Unsafe.AsRef<StringValues>(null);

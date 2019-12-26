@@ -10,9 +10,9 @@ using System.Threading.Tasks;
 using Xunit;
 using Microsoft.AspNetCore.Server.IIS.FunctionalTests.Utilities;
 using Microsoft.AspNetCore.Server.IntegrationTesting;
-using Microsoft.AspNetCore.Testing.xunit;
+using Microsoft.AspNetCore.Testing;
 
-namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
+namespace Microsoft.AspNetCore.Server.IIS.FunctionalTests.OutOfProcess
 {
     [Collection(PublishedSitesCollection.Name)]
     public class AspNetCorePortTests : IISFunctionalTestBase
@@ -29,7 +29,7 @@ namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
 
         public static TestMatrix TestVariants
             => TestMatrix.ForServers(DeployerSelector.ServerType)
-                .WithTfms(Tfm.NetCoreApp30)
+                .WithTfms(Tfm.NetCoreApp50)
                 .WithApplicationTypes(ApplicationType.Portable);
 
         public static IEnumerable<object[]> InvalidTestVariants
@@ -82,6 +82,55 @@ namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
             var response = await deploymentResult.HttpClient.GetAsync("/ServerAddresses");
 
             Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        }
+
+        [ConditionalTheory]
+        [MemberData(nameof(TestVariants))]
+        [RequiresNewShim]
+        public async Task ShutdownMultipleTimesWorks(TestVariant variant)
+        {
+            // Must publish to set env vars in web.config
+            var deploymentParameters = Fixture.GetBaseDeploymentParameters(variant);    
+
+            var deploymentResult = await DeployAsync(deploymentParameters);
+            
+            // Shutdown once
+            var response = await deploymentResult.HttpClient.GetAsync("/Shutdown");
+            
+            // Wait for server to start again.
+            int i;
+            for (i = 0; i < 10; i++)
+            {
+                // ANCM should eventually recover from being shutdown multiple times.
+                response = await deploymentResult.HttpClient.GetAsync("/HelloWorld");
+                if (response.IsSuccessStatusCode)
+                {
+                    break;
+                }
+            }
+            
+            if (i == 10)
+            {
+                // Didn't restart after 10 retries
+                Assert.False(true);
+            }
+            
+            // Shutdown again
+            response = await deploymentResult.HttpClient.GetAsync("/Shutdown");
+            
+            // return if server starts again.
+            for (i = 0; i < 10; i++)
+            {
+                // ANCM should eventually recover from being shutdown multiple times.
+                response = await deploymentResult.HttpClient.GetAsync("/HelloWorld");
+                if (response.IsSuccessStatusCode)
+                {
+                    return;
+                }
+            }
+            
+            // Test failure if this happens.
+            Assert.False(true);
         }
 
         private static int GetUnusedRandomPort()

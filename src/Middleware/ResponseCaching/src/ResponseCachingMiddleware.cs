@@ -1,12 +1,10 @@
-﻿// Copyright (c) .NET Foundation. All rights reserved.
+// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.ResponseCaching.Internal;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
@@ -19,6 +17,10 @@ namespace Microsoft.AspNetCore.ResponseCaching
     public class ResponseCachingMiddleware
     {
         private static readonly TimeSpan DefaultExpirationTimeSpan = TimeSpan.FromSeconds(10);
+
+        // see https://tools.ietf.org/html/rfc7232#section-4.1
+        private static readonly string[] HeadersToIncludeIn304 =
+            new[] { "Cache-Control", "Content-Location", "Date", "ETag", "Expires", "Vary" };
 
         private readonly RequestDelegate _next;
         private readonly ResponseCachingOptions _options;
@@ -110,10 +112,10 @@ namespace Microsoft.AspNetCore.ResponseCaching
                         await _next(httpContext);
 
                         // If there was no response body, check the response headers now. We can cache things like redirects.
-                        await StartResponseAsync(context);
+                        StartResponse(context);
 
                         // Finalize the cache entry
-                        await FinalizeCacheBodyAsync(context);
+                        FinalizeCacheBody(context);
                     }
                     finally
                     {
@@ -157,6 +159,17 @@ namespace Microsoft.AspNetCore.ResponseCaching
                 {
                     _logger.NotModifiedServed();
                     context.HttpContext.Response.StatusCode = StatusCodes.Status304NotModified;
+
+                    if (context.CachedResponseHeaders != null)
+                    {
+                        foreach (var key in HeadersToIncludeIn304)
+                        {
+                            if (context.CachedResponseHeaders.TryGetValue(key, out var values))
+                            {
+                                context.HttpContext.Response.Headers[key] = values;
+                            }
+                        }
+                    }
                 }
                 else
                 {
@@ -197,7 +210,7 @@ namespace Microsoft.AspNetCore.ResponseCaching
         internal async Task<bool> TryServeFromCacheAsync(ResponseCachingContext context)
         {
             context.BaseKey = _keyProvider.CreateBaseKey(context);
-            var cacheEntry = await _cache.GetAsync(context.BaseKey);
+            var cacheEntry = _cache.Get(context.BaseKey);
 
             if (cacheEntry is CachedVaryByRules cachedVaryByRules)
             {
@@ -206,7 +219,7 @@ namespace Microsoft.AspNetCore.ResponseCaching
 
                 foreach (var varyKey in _keyProvider.CreateLookupVaryByKeys(context))
                 {
-                    if (await TryServeCachedResponseAsync(context, await _cache.GetAsync(varyKey)))
+                    if (await TryServeCachedResponseAsync(context, _cache.Get(varyKey)))
                     {
                         return true;
                     }
@@ -325,22 +338,15 @@ namespace Microsoft.AspNetCore.ResponseCaching
             }
         }
 
-        internal Task FinalizeCacheHeadersAsync(ResponseCachingContext context)
-        {
-            if (OnFinalizeCacheHeaders(context))
-            {
-                return _cache.SetAsync(context.BaseKey, context.CachedVaryByRules, context.CachedResponseValidFor);
-            }
-            return Task.CompletedTask;
-        }
-
-        internal async Task FinalizeCacheBodyAsync(ResponseCachingContext context)
+        internal void FinalizeCacheBody(ResponseCachingContext context)
         {
             if (context.ShouldCacheResponse && context.ResponseCachingStream.BufferingEnabled)
             {
                 var contentLength = context.HttpContext.Response.ContentLength;
                 var bufferStream = context.ResponseCachingStream.GetBufferStream();
-                if (!contentLength.HasValue || contentLength == bufferStream.Length)
+                if (!contentLength.HasValue || contentLength == bufferStream.Length
+                    || (bufferStream.Length == 0
+                        && HttpMethods.IsHead(context.HttpContext.Request.Method)))
                 {
                     var response = context.HttpContext.Response;
                     // Add a content-length if required
@@ -351,7 +357,7 @@ namespace Microsoft.AspNetCore.ResponseCaching
 
                     context.CachedResponse.Body = bufferStream;
                     _logger.ResponseCached();
-                    await _cache.SetAsync(context.StorageVaryKey ?? context.BaseKey, context.CachedResponse, context.CachedResponseValidFor);
+                    _cache.Set(context.StorageVaryKey ?? context.BaseKey, context.CachedResponse, context.CachedResponseValidFor);
                 }
                 else
                 {
@@ -389,15 +395,6 @@ namespace Microsoft.AspNetCore.ResponseCaching
             }
         }
 
-        internal Task StartResponseAsync(ResponseCachingContext context)
-        {
-            if (OnStartResponse(context))
-            {
-                return FinalizeCacheHeadersAsync(context);
-            }
-            return Task.CompletedTask;
-        }
-
         internal static void AddResponseCachingFeature(HttpContext context)
         {
             if (context.Features.Get<IResponseCachingFeature>() != null)
@@ -415,16 +412,8 @@ namespace Microsoft.AspNetCore.ResponseCaching
                 context.OriginalResponseStream,
                 _options.MaximumBodySize,
                 StreamUtilities.BodySegmentSize,
-                () => StartResponse(context),
-                () => StartResponseAsync(context));
+                () => StartResponse(context));
             context.HttpContext.Response.Body = context.ResponseCachingStream;
-
-            // Shim IHttpSendFileFeature
-            context.OriginalSendFileFeature = context.HttpContext.Features.Get<IHttpSendFileFeature>();
-            if (context.OriginalSendFileFeature != null)
-            {
-                context.HttpContext.Features.Set<IHttpSendFileFeature>(new SendFileFeatureWrapper(context.OriginalSendFileFeature, context.ResponseCachingStream));
-            }
 
             // Add IResponseCachingFeature
             AddResponseCachingFeature(context.HttpContext);
@@ -437,9 +426,6 @@ namespace Microsoft.AspNetCore.ResponseCaching
         {
             // Unshim response stream
             context.HttpContext.Response.Body = context.OriginalResponseStream;
-
-            // Unshim IHttpSendFileFeature
-            context.HttpContext.Features.Set(context.OriginalSendFileFeature);
 
             // Remove IResponseCachingFeature
             RemoveResponseCachingFeature(context.HttpContext);

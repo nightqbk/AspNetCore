@@ -21,6 +21,8 @@ const longPollingNegotiateResponse = {
         { transport: "LongPolling", transferFormats: ["Text", "Binary"] },
     ],
     connectionId: "abc123",
+    connectionToken: "123abc",
+    negotiateVersion: 1,
 };
 
 const commonHttpOptions: IHttpConnectionOptions = {
@@ -88,7 +90,7 @@ describe("HubConnectionBuilder", () => {
             const pollSent = new PromiseSource<HttpRequest>();
             const pollCompleted = new PromiseSource<HttpResponse>();
             const testClient = createTestClient(pollSent, pollCompleted.promise)
-                .on("POST", "http://example.com?id=abc123", (req) => {
+                .on("POST", "http://example.com?id=123abc", (req) => {
                     // Respond from the poll with the handshake response
                     pollCompleted.resolve(new HttpResponse(204, "No Content", "{}"));
                     return new HttpResponse(202);
@@ -104,7 +106,7 @@ describe("HubConnectionBuilder", () => {
             await expect(connection.start()).rejects.toThrow("The underlying connection was closed before the hub handshake could complete.");
             expect(connection.state).toBe(HubConnectionState.Disconnected);
 
-            expect((await pollSent.promise).url).toMatch(/http:\/\/example.com\?id=abc123.*/);
+            expect((await pollSent.promise).url).toMatch(/http:\/\/example.com\?id=123abc.*/);
         });
     });
 
@@ -125,7 +127,7 @@ describe("HubConnectionBuilder", () => {
             const pollCompleted = new PromiseSource<HttpResponse>();
             let negotiateRequest!: HttpRequest;
             const testClient = createTestClient(pollSent, pollCompleted.promise)
-                .on("POST", "http://example.com?id=abc123", (req) => {
+                .on("POST", "http://example.com?id=123abc", (req) => {
                     // Respond from the poll with the handshake response
                     negotiateRequest = req;
                     pollCompleted.resolve(new HttpResponse(204, "No Content", "{}"));
@@ -219,7 +221,7 @@ describe("HubConnectionBuilder", () => {
             const pollSent = new PromiseSource<HttpRequest>();
             const pollCompleted = new PromiseSource<HttpResponse>();
             const testClient = createTestClient(pollSent, pollCompleted.promise)
-                .on("POST", "http://example.com?id=abc123", (req) => {
+                .on("POST", "http://example.com?id=123abc", (req) => {
                     // Respond from the poll with the handshake response
                     pollCompleted.resolve(new HttpResponse(204, "No Content", "{}"));
                     return new HttpResponse(202);
@@ -244,7 +246,7 @@ describe("HubConnectionBuilder", () => {
             const pollSent = new PromiseSource<HttpRequest>();
             const pollCompleted = new PromiseSource<HttpResponse>();
             const testClient = createTestClient(pollSent, pollCompleted.promise)
-                .on("POST", "http://example.com?id=abc123", (req) => {
+                .on("POST", "http://example.com?id=123abc", (req) => {
                     // Respond from the poll with the handshake response
                     pollCompleted.resolve(new HttpResponse(204, "No Content", "{}"));
                     return new HttpResponse(202);
@@ -274,7 +276,7 @@ describe("HubConnectionBuilder", () => {
             const pollSent = new PromiseSource<HttpRequest>();
             const pollCompleted = new PromiseSource<HttpResponse>();
             const testClient = createTestClient(pollSent, pollCompleted.promise)
-                .on("POST", "http://example.com?id=abc123", (req) => {
+                .on("POST", "http://example.com?id=123abc", (req) => {
                     // Respond from the poll with the handshake response
                     pollCompleted.resolve(new HttpResponse(204, "No Content", "{}"));
                     return new HttpResponse(202);
@@ -322,7 +324,13 @@ describe("HubConnectionBuilder", () => {
 
         let retryCount = 0;
         for (const delay of DEFAULT_RETRY_DELAYS_IN_MILLISECONDS) {
-            expect(builder.reconnectPolicy!.nextRetryDelayInMilliseconds(retryCount++, 0)).toBe(delay);
+            const retryContext = {
+                previousRetryCount: retryCount++,
+                elapsedMilliseconds: 0,
+                retryReason: new Error(),
+            };
+
+            expect(builder.reconnectPolicy!.nextRetryDelayInMilliseconds(retryContext)).toBe(delay);
         }
     });
 
@@ -333,23 +341,47 @@ describe("HubConnectionBuilder", () => {
 
         let retryCount = 0;
         for (const delay of customRetryDelays) {
-            expect(builder.reconnectPolicy!.nextRetryDelayInMilliseconds(retryCount++, 0)).toBe(delay);
+            const retryContext = {
+                previousRetryCount: retryCount++,
+                elapsedMilliseconds: 0,
+                retryReason: new Error(),
+            };
+
+            expect(builder.reconnectPolicy!.nextRetryDelayInMilliseconds(retryContext)).toBe(delay);
         }
 
-        expect(builder.reconnectPolicy!.nextRetryDelayInMilliseconds(retryCount, 0)).toBe(null);
+        const retryContextFinal = {
+            previousRetryCount: retryCount++,
+            elapsedMilliseconds: 0,
+            retryReason: new Error(),
+        };
+
+        expect(builder.reconnectPolicy!.nextRetryDelayInMilliseconds(retryContextFinal)).toBe(null);
     });
 
-    it("withAutomaticReconnect uses a custom IReconnectPolicy when provided", () => {
+    it("withAutomaticReconnect uses a custom IRetryPolicy when provided", () => {
         const customRetryDelays = [127, 0, 0, 1];
         const builder = new HubConnectionBuilder()
             .withAutomaticReconnect(new DefaultReconnectPolicy(customRetryDelays));
 
         let retryCount = 0;
         for (const delay of customRetryDelays) {
-            expect(builder.reconnectPolicy!.nextRetryDelayInMilliseconds(retryCount++, 0)).toBe(delay);
+            const retryContext = {
+                previousRetryCount: retryCount++,
+                elapsedMilliseconds: 0,
+                retryReason: new Error(),
+            };
+
+            expect(builder.reconnectPolicy!.nextRetryDelayInMilliseconds(retryContext)).toBe(delay);
         }
 
-        expect(builder.reconnectPolicy!.nextRetryDelayInMilliseconds(retryCount, 0)).toBe(null);
+        const retryContextFinal = {
+            previousRetryCount: retryCount++,
+            elapsedMilliseconds: 0,
+            retryReason: new Error(),
+        };
+
+        expect(builder.reconnectPolicy!.nextRetryDelayInMilliseconds(retryContextFinal)).toBe(null);
     });
 });
 
@@ -383,8 +415,8 @@ function createConnectionBuilder(logger?: ILogger): HubConnectionBuilder {
 function createTestClient(pollSent: PromiseSource<HttpRequest>, pollCompleted: Promise<HttpResponse>, negotiateResponse?: any): TestHttpClient {
     let firstRequest = true;
     return new TestHttpClient()
-        .on("POST", "http://example.com/negotiate", () => negotiateResponse || longPollingNegotiateResponse)
-        .on("GET", /http:\/\/example.com\?id=abc123&_=.*/, (req) => {
+        .on("POST", "http://example.com/negotiate?negotiateVersion=1", () => negotiateResponse || longPollingNegotiateResponse)
+        .on("GET", /http:\/\/example.com\?id=123abc&_=.*/, (req) => {
             if (firstRequest) {
                 firstRequest = false;
                 return new HttpResponse(200);

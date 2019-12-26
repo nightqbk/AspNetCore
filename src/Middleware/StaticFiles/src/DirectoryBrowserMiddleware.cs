@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Endpoints;
+using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -31,7 +31,7 @@ namespace Microsoft.AspNetCore.StaticFiles
         /// <param name="next">The next middleware in the pipeline.</param>
         /// <param name="hostingEnv">The <see cref="IWebHostEnvironment"/> used by this middleware.</param>
         /// <param name="options">The configuration for this middleware.</param>
-        public DirectoryBrowserMiddleware(RequestDelegate next, IWebHostEnvironment hostingEnv, IOptions<DirectoryBrowserOptions> options) 
+        public DirectoryBrowserMiddleware(RequestDelegate next, IWebHostEnvironment hostingEnv, IOptions<DirectoryBrowserOptions> options)
             : this(next, hostingEnv, HtmlEncoder.Default, options)
         {
         }
@@ -68,7 +68,7 @@ namespace Microsoft.AspNetCore.StaticFiles
             _next = next;
             _options = options.Value;
             _fileProvider = _options.FileProvider ?? Helpers.ResolveFileProvider(hostingEnv);
-            _formatter = options.Value.Formatter ?? new HtmlDirectoryFormatter(encoder);
+            _formatter = _options.Formatter ?? new HtmlDirectoryFormatter(encoder);
             _matchUrl = _options.RequestPath;
         }
 
@@ -80,17 +80,16 @@ namespace Microsoft.AspNetCore.StaticFiles
         public Task Invoke(HttpContext context)
         {
             // Check if the URL matches any expected paths, skip if an endpoint was selected
-            if (context.GetEndpoint() == null &&
-                Helpers.IsGetOrHeadMethod(context.Request.Method)
+            if (context.GetEndpoint() == null
+                && Helpers.IsGetOrHeadMethod(context.Request.Method)
                 && Helpers.TryMatchPath(context, _matchUrl, forDirectory: true, subpath: out var subpath)
                 && TryGetDirectoryInfo(subpath, out var contents))
             {
                 // If the path matches a directory but does not end in a slash, redirect to add the slash.
                 // This prevents relative links from breaking.
-                if (!Helpers.PathEndsInSlash(context.Request.Path))
+                if (_options.RedirectToAppendTrailingSlash && !Helpers.PathEndsInSlash(context.Request.Path))
                 {
-                    context.Response.StatusCode = 301;
-                    context.Response.Headers[HeaderNames.Location] = context.Request.PathBase + context.Request.Path + "/" + context.Request.QueryString;
+                    Helpers.RedirectToPathWithSlash(context);
                     return Task.CompletedTask;
                 }
 

@@ -129,21 +129,35 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
             var suppressInputFormatterBuffering = _options.SuppressInputFormatterBuffering;
 
             var readStream = request.Body;
-            if (!request.Body.CanSeek && !suppressInputFormatterBuffering)
+            var disposeReadStream = false;
+            if (readStream.CanSeek)
+            {
+                // The most common way of getting here is the user has request buffering on.
+                // However, request buffering isn't eager, and consequently it will peform pass-thru synchronous
+                // reads as part of the deserialization.
+                // To avoid this, drain and reset the stream.
+                var position = request.Body.Position;
+                await readStream.DrainAsync(CancellationToken.None);
+                readStream.Position = position;
+            }
+            else if (!suppressInputFormatterBuffering)
             {
                 // JSON.Net does synchronous reads. In order to avoid blocking on the stream, we asynchronously
                 // read everything into a buffer, and then seek back to the beginning.
                 var memoryThreshold = DefaultMemoryThreshold;
-                if (request.ContentLength.HasValue && request.ContentLength.Value > 0 && request.ContentLength.Value < memoryThreshold)
+                var contentLength = request.ContentLength.GetValueOrDefault();
+                if (contentLength > 0 && contentLength < memoryThreshold)
                 {
                     // If the Content-Length is known and is smaller than the default buffer size, use it.
-                    memoryThreshold = (int)request.ContentLength.Value;
+                    memoryThreshold = (int)contentLength;
                 }
 
                 readStream = new FileBufferingReadStream(request.Body, memoryThreshold);
 
                 await readStream.DrainAsync(CancellationToken.None);
                 readStream.Seek(0L, SeekOrigin.Begin);
+
+                disposeReadStream = true;
             }
 
             var successful = true;
@@ -169,9 +183,9 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
                     jsonSerializer.Error -= ErrorHandler;
                     ReleaseJsonSerializer(jsonSerializer);
 
-                    if (readStream is FileBufferingReadStream fileBufferingReadStream)
+                    if (disposeReadStream)
                     {
-                        fileBufferingReadStream.Dispose();
+                        await readStream.DisposeAsync();
                     }
                 }
             }
@@ -192,8 +206,15 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
                 }
             }
 
-            if (!(exception is JsonException || exception is OverflowException))
+            if (!(exception is JsonException || exception is OverflowException || exception is FormatException))
             {
+                // At this point we've already recorded all exceptions as an entry in the ModelStateDictionary.
+                // We only need to rethrow an exception if we believe it needs to be handled by something further up
+                // the stack.
+                // JsonException, OverflowException, and FormatException are assumed to be only encountered when
+                // parsing the JSON and are consequently "safe" to be exposed as part of ModelState. Everything else
+                // needs to be rethrown.
+
                 var exceptionDispatchInfo = ExceptionDispatchInfo.Capture(exception);
                 exceptionDispatchInfo.Throw();
             }
@@ -225,7 +246,9 @@ namespace Microsoft.AspNetCore.Mvc.Formatters
                         }
                         else
                         {
-                            addMember = !path.EndsWith("." + member, StringComparison.Ordinal);
+                            addMember = !path.EndsWith("." + member, StringComparison.Ordinal)
+                                && !path.EndsWith("['" + member + "']", StringComparison.Ordinal)
+                                && !path.EndsWith("[" + member + "]", StringComparison.Ordinal);
                         }
                     }
                 }

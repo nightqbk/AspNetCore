@@ -10,6 +10,7 @@
 #define MAX_PORT                                    48000
 #define MAX_RETRY                                   10
 #define MAX_ACTIVE_CHILD_PROCESSES                  16
+#define PIPE_OUTPUT_THREAD_TIMEOUT                  2000
 #define LOCALHOST                                   "127.0.0.1"
 #define ASPNETCORE_PORT_STR                         L"ASPNETCORE_PORT"
 #define ASPNETCORE_PORT_ENV_STR                     L"ASPNETCORE_PORT="
@@ -36,6 +37,7 @@ public:
         _In_ BOOL                  fAnonymousAuthEnabled,
         _In_ std::map<std::wstring, std::wstring, ignore_case_comparer>& pEnvironmentVariables,
         _In_ BOOL                  fStdoutLogEnabled,
+        _In_ BOOL                  fDisableRedirection,
         _In_ BOOL                  fWebSocketSupported,
         _In_ STRU                 *pstruStdoutLogFile,
         _In_ STRU                 *pszAppPhysicalPath,
@@ -134,6 +136,15 @@ public:
     SendSignal(
         VOID
     );
+
+    static
+        void
+        ReadStdErrHandle(
+            LPVOID pContext
+        );
+
+    void
+        ReadStdErrHandleInternal();
 
 private:
     VOID
@@ -243,6 +254,7 @@ private:
     BOOL                    m_fBasicAuthEnabled;
     BOOL                    m_fAnonymousAuthEnabled;
     BOOL                    m_fDebuggerAttached;
+    BOOL                    m_fEnableOutOfProcessConsoleRedirection;
 
     STTIMER                 m_Timer;
     SOCKET                  m_socket;
@@ -283,6 +295,9 @@ private:
     HANDLE                  m_hListeningProcessHandle;
     HANDLE                  m_hProcessWaitHandle;
     HANDLE                  m_hShutdownHandle;
+    HANDLE                  m_hReadThread;
+    HANDLE                  m_hStdErrWritePipe;
+    std::wstringstream      m_output;
     //
     // m_hChildProcessHandle is the handle to process created by
     // m_hProcessHandle process if it does.

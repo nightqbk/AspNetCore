@@ -84,10 +84,9 @@ namespace Microsoft.AspNetCore.Routing.Matching
         /// For framework use only.
         /// </summary>
         /// <param name="httpContext"></param>
-        /// <param name="context"></param>
         /// <param name="candidates"></param>
         /// <returns></returns>
-        public Task ApplyAsync(HttpContext httpContext, EndpointSelectorContext context, CandidateSet candidates)
+        public Task ApplyAsync(HttpContext httpContext, CandidateSet candidates)
         {
             if (httpContext == null)
             {
@@ -114,8 +113,8 @@ namespace Microsoft.AspNetCore.Routing.Matching
             {
                 // We do this check first for consistency with how 405 is implemented for the graph version
                 // of this code. We still want to know if any endpoints in this set require an HTTP method
-                // even if those endpoints are already invalid.
-                var metadata = candidates[i].Endpoint.Metadata.GetMetadata<IHttpMethodMetadata>();
+                // even if those endpoints are already invalid - hence the null-check.
+                var metadata = candidates[i].Endpoint?.Metadata.GetMetadata<IHttpMethodMetadata>();
                 if (metadata == null || metadata.HttpMethods.Count == 0)
                 {
                     // Can match any method.
@@ -168,7 +167,8 @@ namespace Microsoft.AspNetCore.Routing.Matching
             if (needs405Endpoint == true)
             {
                 // We saw some endpoints coming in, and we eliminated them all.
-                context.Endpoint = CreateRejectionEndpoint(methods.OrderBy(m => m, StringComparer.OrdinalIgnoreCase));
+                httpContext.SetEndpoint(CreateRejectionEndpoint(methods.OrderBy(m => m, StringComparer.OrdinalIgnoreCase)));
+                httpContext.Request.RouteValues = null;
             }
 
             return Task.CompletedTask;
@@ -294,7 +294,7 @@ namespace Microsoft.AspNetCore.Routing.Matching
             // unlikely in a traditional MVC application. That's good.
             //
             // We don't bother returning a 405 when the CORS preflight method doesn't exist.
-            // The developer calling the API will see it as a CORS error, which is fine because 
+            // The developer calling the API will see it as a CORS error, which is fine because
             // there isn't an endpoint to check for a CORS policy.
             if (!edges.TryGetValue(new EdgeKey(AnyMethod, false), out var matches))
             {

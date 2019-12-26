@@ -33,18 +33,18 @@ namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Infrastructure
             foreach (var item in rootElement.EnumerateObject())
             {
                 object deserializedValue;
-                switch (item.Value.Type)
+                switch (item.Value.ValueKind)
                 {
-                    case JsonValueType.False:
-                    case JsonValueType.True:
+                    case JsonValueKind.False:
+                    case JsonValueKind.True:
                         deserializedValue = item.Value.GetBoolean();
                         break;
 
-                    case JsonValueType.Number:
+                    case JsonValueKind.Number:
                         deserializedValue = item.Value.GetInt32();
                         break;
 
-                    case JsonValueType.String:
+                    case JsonValueKind.String:
                         if (item.Value.TryGetGuid(out var guid))
                         {
                             deserializedValue = guid;
@@ -59,18 +59,73 @@ namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Infrastructure
                         }
                         break;
 
-                    case JsonValueType.Null:
+                    case JsonValueKind.Null:
                         deserializedValue = null;
                         break;
 
+                    case JsonValueKind.Array:
+                        deserializedValue = DeserializeArray(item.Value);
+                        break;
+
+                    case JsonValueKind.Object:
+                        deserializedValue = DeserializeDictionaryEntry(item.Value);
+                        break;
+
                     default:
-                        throw new InvalidOperationException(Resources.FormatTempData_CannotDeserializeType(item.Value.Type));
+                        throw new InvalidOperationException(Resources.FormatTempData_CannotDeserializeType(item.Value.ValueKind));
                 }
 
                 deserialized[item.Name] = deserializedValue;
             }
 
             return deserialized;
+        }
+
+        private static object DeserializeArray(in JsonElement arrayElement)
+        {
+            if (arrayElement.GetArrayLength() == 0)
+            {
+                // We have to infer the type of the array by inspecting it's elements.
+                // If there's nothing to inspect, return a null value since we do not know
+                // what type the user code is expecting.
+                return null;
+            }
+
+            if (arrayElement[0].ValueKind == JsonValueKind.String)
+            {
+                var array = new List<string>();
+
+                foreach (var item in arrayElement.EnumerateArray())
+                {
+                    array.Add(item.GetString());
+                }
+
+                return array.ToArray();
+            }
+            else if (arrayElement[0].ValueKind == JsonValueKind.Number)
+            {
+                var array = new List<int>();
+
+                foreach (var item in arrayElement.EnumerateArray())
+                {
+                    array.Add(item.GetInt32());
+                }
+
+                return array.ToArray();
+            }
+
+            throw new InvalidOperationException(Resources.FormatTempData_CannotDeserializeType(arrayElement.ValueKind));
+        }
+
+        private static object DeserializeDictionaryEntry(in JsonElement objectElement)
+        {
+            var dictionary = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var item in objectElement.EnumerateObject())
+            {
+                dictionary[item.Name] = item.Value.GetString();
+            }
+
+            return dictionary;
         }
 
         public override byte[] Serialize(IDictionary<string, object> values)
@@ -126,6 +181,33 @@ namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Infrastructure
                         case Guid guid:
                             writer.WriteString(key, guid);
                             break;
+
+                        case ICollection<int> intCollection:
+                            writer.WriteStartArray(key);
+                            foreach (var element in intCollection)
+                            {
+                                writer.WriteNumberValue(element);
+                            }
+                            writer.WriteEndArray();
+                            break;
+
+                        case ICollection<string> stringCollection:
+                            writer.WriteStartArray(key);
+                            foreach (var element in stringCollection)
+                            {
+                                writer.WriteStringValue(element);
+                            }
+                            writer.WriteEndArray();
+                            break;
+
+                        case IDictionary<string, string> dictionary:
+                            writer.WriteStartObject(key);
+                            foreach (var element in dictionary)
+                            {
+                                writer.WriteString(element.Key, element.Value);
+                            }
+                            writer.WriteEndObject();
+                            break;
                     }
                 }
                 writer.WriteEndObject();
@@ -150,7 +232,10 @@ namespace Microsoft.AspNetCore.Mvc.ViewFeatures.Infrastructure
                 type == typeof(string) ||
                 type == typeof(bool) ||
                 type == typeof(DateTime) ||
-                type == typeof(Guid);
+                type == typeof(Guid) ||
+                typeof(ICollection<int>).IsAssignableFrom(type) ||
+                typeof(ICollection<string>).IsAssignableFrom(type) ||
+                typeof(IDictionary<string, string>).IsAssignableFrom(type);
         }
     }
 }

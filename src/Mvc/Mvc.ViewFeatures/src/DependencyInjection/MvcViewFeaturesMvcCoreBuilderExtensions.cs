@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Linq;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
@@ -17,7 +18,6 @@ using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.AspNetCore.Mvc.ViewFeatures.Buffers;
 using Microsoft.AspNetCore.Mvc.ViewFeatures.Filters;
 using Microsoft.AspNetCore.Mvc.ViewFeatures.Infrastructure;
-using Microsoft.AspNetCore.Mvc.ViewFeatures.RazorComponents;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.JSInterop;
@@ -174,6 +174,9 @@ namespace Microsoft.Extensions.DependencyInjection
 
             services.TryAddSingleton<IJsonHelper, SystemTextJsonHelper>();
 
+            // Component services for Blazor server-side interop
+            services.TryAddSingleton<ServerComponentSerializer>();
+
             //
             // View Components
             //
@@ -202,11 +205,13 @@ namespace Microsoft.Extensions.DependencyInjection
             services.TryAddSingleton<SaveTempDataFilter>();
 
             //
-            // Component prerendering
+            // Component rendering
             //
+            services.TryAddScoped<IComponentRenderer, ComponentRenderer>();
             services.TryAddScoped<StaticComponentRenderer>();
-            services.TryAddScoped<IUriHelper, HttpUriHelper>();
+            services.TryAddScoped<NavigationManager, HttpNavigationManager>();
             services.TryAddScoped<IJSRuntime, UnsupportedJavaScriptRuntime>();
+            services.TryAddScoped<INavigationInterception, UnsupportedNavigationInterception>();
 
             services.TryAddTransient<ControllerSaveTempDataPropertyFilter>();
 

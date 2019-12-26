@@ -21,10 +21,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.StackTrace.Sources;
 using Microsoft.Net.Http.Headers;
 
-namespace Microsoft.AspNetCore.Hosting.Internal
+namespace Microsoft.AspNetCore.Hosting
 {
     internal class WebHost : IWebHost, IAsyncDisposable
     {
@@ -42,9 +43,10 @@ namespace Microsoft.AspNetCore.Hosting.Internal
 
         private IServiceProvider _applicationServices;
         private ExceptionDispatchInfo _applicationServicesException;
-        private ILogger _logger;
+        private ILogger _logger =  NullLogger.Instance;
 
         private bool _stopped;
+        private bool _startedServer;
 
         // Used for testing only
         internal WebHostOptions Options => _options;
@@ -147,16 +149,19 @@ namespace Microsoft.AspNetCore.Hosting.Internal
 
             _applicationLifetime = _applicationServices.GetRequiredService<ApplicationLifetime>();
             _hostedServiceExecutor = _applicationServices.GetRequiredService<HostedServiceExecutor>();
+
+            // Fire IHostedService.Start
+            await _hostedServiceExecutor.StartAsync(cancellationToken).ConfigureAwait(false);
+
             var diagnosticSource = _applicationServices.GetRequiredService<DiagnosticListener>();
             var httpContextFactory = _applicationServices.GetRequiredService<IHttpContextFactory>();
             var hostingApp = new HostingApplication(application, _logger, diagnosticSource, httpContextFactory);
             await Server.StartAsync(hostingApp, cancellationToken).ConfigureAwait(false);
+            _startedServer = true;
 
             // Fire IApplicationLifetime.Started
             _applicationLifetime?.NotifyStarted();
 
-            // Fire IHostedService.Start
-            await _hostedServiceExecutor.StartAsync(cancellationToken).ConfigureAwait(false);
 
             _logger.Started();
 
@@ -259,11 +264,13 @@ namespace Microsoft.AspNetCore.Hosting.Internal
                     .InformationalVersion;
                 model.ClrVersion = clrVersion;
                 model.OperatingSystemDescription = RuntimeInformation.OSDescription;
+                model.ShowRuntimeDetails = showDetailedErrors;
 
                 if (showDetailedErrors)
                 {
                     var exceptionDetailProvider = new ExceptionDetailsProvider(
                         hostingEnv.ContentRootFileProvider,
+                        logger,
                         sourceCodeLineCount: 6);
 
                     model.ErrorDetails = exceptionDetailProvider.GetDetails(ex);
@@ -315,7 +322,7 @@ namespace Microsoft.AspNetCore.Hosting.Internal
             }
             _stopped = true;
 
-            _logger?.Shutdown();
+            _logger.Shutdown();
 
             var timeoutToken = new CancellationTokenSource(Options.ShutdownTimeout).Token;
             if (!cancellationToken.CanBeCanceled)
@@ -330,7 +337,7 @@ namespace Microsoft.AspNetCore.Hosting.Internal
             // Fire IApplicationLifetime.Stopping
             _applicationLifetime?.StopApplication();
 
-            if (Server != null)
+            if (Server != null && _startedServer)
             {
                 await Server.StopAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -349,7 +356,7 @@ namespace Microsoft.AspNetCore.Hosting.Internal
 
         public void Dispose()
         {
-            DisposeAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            DisposeAsync().GetAwaiter().GetResult();
         }
 
         public async ValueTask DisposeAsync()
@@ -362,7 +369,7 @@ namespace Microsoft.AspNetCore.Hosting.Internal
                 }
                 catch (Exception ex)
                 {
-                    _logger?.ServerShutdownException(ex);
+                    _logger.ServerShutdownException(ex);
                 }
             }
 

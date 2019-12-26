@@ -13,7 +13,7 @@ namespace CodeGenerator
             {
                 "IHttpRequestFeature",
                 "IHttpResponseFeature",
-                "IResponseBodyPipeFeature",
+                "IHttpResponseBodyFeature",
                 "IRequestBodyPipeFeature",
                 "IHttpRequestIdentifierFeature",
                 "IServiceProvidersFeature",
@@ -26,6 +26,7 @@ namespace CodeGenerator
             var commonFeatures = new[]
             {
                 "IHttpAuthenticationFeature",
+                "IHttpRequestTrailersFeature",
                 "IQueryFeature",
                 "IFormFeature",
             };
@@ -44,18 +45,12 @@ namespace CodeGenerator
                 "IHttpMinRequestBodyDataRateFeature",
                 "IHttpMinResponseDataRateFeature",
                 "IHttpBodyControlFeature",
-                "IHttpResponseStartFeature"
-            };
-
-            var rareFeatures = new[]
-            {
-                "IHttpSendFileFeature",
+                "IHttpResetFeature"
             };
 
             var allFeatures = alwaysFeatures
                 .Concat(commonFeatures)
                 .Concat(sometimesFeatures)
-                .Concat(rareFeatures)
                 .ToArray();
 
             // NOTE: This list MUST always match the set of feature interfaces implemented by HttpProtocol.
@@ -64,15 +59,16 @@ namespace CodeGenerator
             {
                 "IHttpRequestFeature",
                 "IHttpResponseFeature",
-                "IResponseBodyPipeFeature",
+                "IHttpResponseBodyFeature",
                 "IRequestBodyPipeFeature",
                 "IHttpUpgradeFeature",
                 "IHttpRequestIdentifierFeature",
                 "IHttpRequestLifetimeFeature",
+                "IHttpRequestTrailersFeature",
                 "IHttpConnectionFeature",
                 "IHttpMaxRequestBodySizeFeature",
+                "IHttpMinRequestBodyDataRateFeature",
                 "IHttpBodyControlFeature",
-                "IHttpResponseStartFeature",
                 "IRouteValuesFeature",
                 "IEndpointFeature"
             };

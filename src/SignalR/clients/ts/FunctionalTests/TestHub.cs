@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Http.Connections.Features;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Net.Http.Headers;
 
 namespace FunctionalTests
 {
@@ -125,6 +126,7 @@ namespace FunctionalTests
             {
                 ByteArray = new byte[] { 0x1, 0x2, 0x3 },
                 DateTime = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                Guid = new Guid("00010203-0405-0607-0706-050403020100"),
                 IntArray = new int[] { 1, 2, 3 },
                 String = "hello world",
             };
@@ -133,6 +135,11 @@ namespace FunctionalTests
         public string GetContentTypeHeader()
         {
             return Context.GetHttpContext().Request.Headers["Content-Type"];
+        }
+
+        public string GetHeader(string headerName)
+        {
+            return Context.GetHttpContext().Request.Headers[headerName];
         }
 
         public string GetCookie(string cookieName)

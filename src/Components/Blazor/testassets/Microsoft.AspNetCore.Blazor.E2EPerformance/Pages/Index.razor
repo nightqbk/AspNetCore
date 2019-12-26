@@ -3,8 +3,8 @@
 
 Hello, world!
 
-@functions {
-    protected override void OnAfterRender()
+@code {
+    protected override void OnAfterRender(bool firstRender)
     {
         BenchmarkEvent.Send(JSRuntime, "Rendered index.cshtml");
     }

@@ -1,8 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netcoreapp3.0;net461</TargetFrameworks>
+    <TargetFramework>$(DefaultNetCoreTargetFramework)</TargetFramework>
     <RootNamespace>Microsoft.AspNetCore.Diagnostics.HealthChecks</RootNamespace>
+    <!-- Temporary workaround - the build thinks 'alpha1.111' is newer than 'alpha.1.222'.
+         Remove once we can ingest EF again: https://github.com/aspnet/AspNetCore/issues/17949 -->
+    <NoWarn>$(NoWarn);NU1605</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

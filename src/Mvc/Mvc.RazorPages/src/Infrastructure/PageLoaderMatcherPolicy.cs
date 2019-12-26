@@ -51,7 +51,7 @@ namespace Microsoft.AspNetCore.Mvc.RazorPages.Infrastructure
             return false;
         }
 
-        public Task ApplyAsync(HttpContext httpContext, EndpointSelectorContext context, CandidateSet candidates)
+        public Task ApplyAsync(HttpContext httpContext, CandidateSet candidates)
         {
             if (httpContext == null)
             {
@@ -65,6 +65,11 @@ namespace Microsoft.AspNetCore.Mvc.RazorPages.Infrastructure
 
             for (var i = 0; i < candidates.Count; i++)
             {
+                if (!candidates.IsValidCandidate(i))
+                {
+                    continue;
+                }
+
                 ref var candidate = ref candidates[i];
                 var endpoint = candidate.Endpoint;
 

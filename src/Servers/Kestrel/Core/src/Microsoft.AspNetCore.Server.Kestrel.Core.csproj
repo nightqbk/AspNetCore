@@ -1,25 +1,30 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <Description>Core components of ASP.NET Core Kestrel cross-platform web server.</Description>
-    <TargetFramework>netcoreapp3.0</TargetFramework>
+    <TargetFramework>$(DefaultNetCoreTargetFramework)</TargetFramework>
     <IsAspNetCoreApp>true</IsAspNetCoreApp>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageTags>aspnetcore;kestrel</PackageTags>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>CS1591;$(NoWarn)</NoWarn>
+    <IsShippingPackage>false</IsShippingPackage>
+    <DefineConstants>$(DefineConstants);KESTREL</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="$(SharedSourceRoot)CertificateGeneration\**\*.cs" />
     <Compile Include="$(SharedSourceRoot)ValueTaskExtensions\**\*.cs" />
     <Compile Include="$(SharedSourceRoot)UrlDecoder\**\*.cs" />
+    <Compile Include="$(SharedSourceRoot)Http2\**\*.cs" LinkBase="Shared\Http2\" />
+    <Compile Include="$(SharedSourceRoot)ServerInfrastructure\**\*.cs" LinkBase="Shared\" />
+    <Compile Include="$(RepoRoot)src\Shared\TaskToApm.cs" Link="Internal\TaskToApm.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <Reference Include="Microsoft.AspNetCore.Hosting.Abstractions" />
     <Reference Include="Microsoft.AspNetCore.Http" />
-    <Reference Include="Microsoft.AspNetCore.Server.Kestrel.Transport.Abstractions" />
+    <Reference Include="Microsoft.AspNetCore.Connections.Abstractions" />
     <Reference Include="Microsoft.AspNetCore.WebUtilities" />
     <Reference Include="Microsoft.Extensions.Configuration.Binder" />
     <Reference Include="Microsoft.Extensions.Logging.Abstractions" />
@@ -30,6 +35,14 @@
 
   <ItemGroup>
     <EmbeddedResource Update="CoreStrings.resx">
+      <Generator></Generator>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(SharedSourceRoot)ServerInfrastructure\SharedStrings.resx" Link="Shared\SharedStrings.resx">
+      <ManifestResourceName>Microsoft.AspNetCore.Server.SharedStrings</ManifestResourceName>
+      <Generator></Generator>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(SharedSourceRoot)Http2\SR.resx" Link="Shared\Http2\SR.resx">
+      <ManifestResourceName>System.Net.Http.SR</ManifestResourceName>
       <Generator></Generator>
     </EmbeddedResource>
   </ItemGroup>

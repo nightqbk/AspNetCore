@@ -12,7 +12,7 @@ using Xunit.Abstractions;
 
 namespace Microsoft.AspNetCore.Components.E2ETest.Tests
 {
-    public class CascadingValueTest : BasicTestAppTestBase
+    public class CascadingValueTest : ServerTestBase<ToggleExecutionModeServerFixture<Program>>
     {
         public CascadingValueTest(
             BrowserFixture browserFixture,
@@ -24,8 +24,8 @@ namespace Microsoft.AspNetCore.Components.E2ETest.Tests
 
         protected override void InitializeAsyncCore()
         {
-            Navigate(ServerPathBase, noReload: !_serverFixture.UsingAspNetHost);
-            MountTestComponent<BasicTestApp.CascadingValueTest.CascadingValueSupplier>();
+            Navigate(ServerPathBase, noReload: _serverFixture.ExecutionMode == ExecutionMode.Client);
+            Browser.MountTestComponent<BasicTestApp.CascadingValueTest.CascadingValueSupplier>();
         }
 
         [Fact]

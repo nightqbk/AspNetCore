@@ -3,15 +3,19 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.IO;
 using System.Security.Claims;
 using System.Threading;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Features.Authentication;
-using Microsoft.AspNetCore.Http.Internal;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Microsoft.AspNetCore.Http
 {
+    /// <summary>
+    /// Represents an implementation of the HTTP Context class. 
+    /// </summary>
     public sealed class DefaultHttpContext : HttpContext
     {
         // Lambdas hoisted to static readonly fields to improve inlining https://github.com/dotnet/roslyn/issues/13624
@@ -31,13 +35,21 @@ namespace Microsoft.AspNetCore.Http
         private DefaultConnectionInfo _connection;
         private DefaultWebSocketManager _websockets;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="DefaultHttpContext"/> class.
+        /// </summary>
         public DefaultHttpContext()
             : this(new FeatureCollection())
         {
             Features.Set<IHttpRequestFeature>(new HttpRequestFeature());
             Features.Set<IHttpResponseFeature>(new HttpResponseFeature());
+            Features.Set<IHttpResponseBodyFeature>(new StreamResponseBodyFeature(Stream.Null));
         }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="DefaultHttpContext"/> class with provided features.
+        /// </summary>
+        /// <param name="features">Initial set of features for the <see cref="DefaultHttpContext"/>.</param>
         public DefaultHttpContext(IFeatureCollection features)
         {
             _features.Initalize(features);
@@ -45,6 +57,13 @@ namespace Microsoft.AspNetCore.Http
             _response = new DefaultHttpResponse(this);
         }
 
+        /// <summary>
+        /// Reinitialize  the current instant of the class with features passed in.
+        /// </summary>
+        /// <remarks>
+        /// This method allows the consumer to re-use the <see cref="DefaultHttpContext" /> for another request, rather than having to allocate a new instance.
+        /// </remarks>
+        /// <param name="features">The new set of features for the <see cref="DefaultHttpContext" />.</param>
         public void Initialize(IFeatureCollection features)
         {
             var revision = features.Revision;
@@ -55,6 +74,9 @@ namespace Microsoft.AspNetCore.Http
             _websockets?.Initialize(features, revision);
         }
 
+        /// <summary>
+        /// Uninitialize all the features in the <see cref="DefaultHttpContext" />.
+        /// </summary>
         public void Uninitialize()
         {
             _features = default;
@@ -64,8 +86,20 @@ namespace Microsoft.AspNetCore.Http
             _websockets?.Uninitialize();
         }
 
+        /// <summary>
+        /// Gets or set the <see cref="FormOptions" /> for this instance.
+        /// </summary>
+        /// <returns>
+        /// <see cref="FormOptions"/>        
+        /// </returns>
         public FormOptions FormOptions { get; set; }
 
+        /// <summary>
+        /// Gets or sets the <see cref="IServiceScopeFactory" /> for this instance.
+        /// </summary>
+        /// <returns>   
+        /// <see cref="IServiceScopeFactory"/>      
+        /// </returns>
         public IServiceScopeFactory ServiceScopeFactory { get; set; }
 
         private IItemsFeature ItemsFeature =>
@@ -90,16 +124,22 @@ namespace Microsoft.AspNetCore.Http
         private IHttpRequestIdentifierFeature RequestIdentifierFeature =>
             _features.Fetch(ref _features.Cache.RequestIdentifier, _newHttpRequestIdentifierFeature);
 
-        public override IFeatureCollection Features => _features.Collection;
+        /// <inheritdoc/>
+        public override IFeatureCollection Features => _features.Collection ?? ContextDisposed();
 
+        /// <inheritdoc/>
         public override HttpRequest Request => _request;
 
+        /// <inheritdoc/>
         public override HttpResponse Response => _response;
 
-        public override ConnectionInfo Connection => _connection ?? (_connection = new DefaultConnectionInfo(_features.Collection));
+        /// <inheritdoc/>
+        public override ConnectionInfo Connection => _connection ?? (_connection = new DefaultConnectionInfo(Features));
 
-        public override WebSocketManager WebSockets => _websockets ?? (_websockets = new DefaultWebSocketManager(_features.Collection));
+        /// <inheritdoc/>
+        public override WebSocketManager WebSockets => _websockets ?? (_websockets = new DefaultWebSocketManager(Features));
 
+        /// <inheritdoc/>
         public override ClaimsPrincipal User
         {
             get
@@ -115,30 +155,35 @@ namespace Microsoft.AspNetCore.Http
             set { HttpAuthenticationFeature.User = value; }
         }
 
+        /// <inheritdoc/>
         public override IDictionary<object, object> Items
         {
             get { return ItemsFeature.Items; }
             set { ItemsFeature.Items = value; }
         }
 
+        /// <inheritdoc/>
         public override IServiceProvider RequestServices
         {
             get { return ServiceProvidersFeature.RequestServices; }
             set { ServiceProvidersFeature.RequestServices = value; }
         }
 
+        /// <inheritdoc/>
         public override CancellationToken RequestAborted
         {
             get { return LifetimeFeature.RequestAborted; }
             set { LifetimeFeature.RequestAborted = value; }
         }
 
+        /// <inheritdoc/>
         public override string TraceIdentifier
         {
             get { return RequestIdentifierFeature.TraceIdentifier; }
             set { RequestIdentifierFeature.TraceIdentifier = value; }
         }
 
+        /// <inheritdoc/>
         public override ISession Session
         {
             get
@@ -157,10 +202,28 @@ namespace Microsoft.AspNetCore.Http
             }
         }
 
+        // This property exists because of backwards compatibility.
+        // We send an anonymous object with an HttpContext property
+        // via DiagnosticListener in various events throughout the pipeline. Instead
+        // we just send the HttpContext to avoid extra allocations
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        public HttpContext HttpContext => this;
 
+        /// <inheritdoc/>
         public override void Abort()
         {
             LifetimeFeature.Abort();
+        }
+
+        private static IFeatureCollection ContextDisposed()
+        {
+            ThrowContextDisposed();
+            return null;
+        }
+
+        private static void ThrowContextDisposed()
+        {
+            throw new ObjectDisposedException(nameof(HttpContext), $"Request has finished and {nameof(HttpContext)} disposed.");
         }
 
         struct FeatureInterfaces

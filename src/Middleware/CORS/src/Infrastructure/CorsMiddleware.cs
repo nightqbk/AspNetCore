@@ -3,9 +3,7 @@
 
 using System;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Cors.Internal;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Endpoints;
 using Microsoft.Extensions.Logging;
 
 namespace Microsoft.AspNetCore.Cors.Infrastructure
@@ -16,8 +14,8 @@ namespace Microsoft.AspNetCore.Cors.Infrastructure
     public class CorsMiddleware
     {
         // Property key is used by other systems, e.g. MVC, to check if CORS middleware has run
-        private const string CorsMiddlewareInvokedKey = "__CorsMiddlewareInvoked";
-        private static readonly object CorsMiddlewareInvokedValue = new object();
+        private const string CorsMiddlewareWithEndpointInvokedKey = "__CorsMiddlewareWithEndpointInvoked";
+        private static readonly object CorsMiddlewareWithEndpointInvokedValue = new object();
 
         private readonly Func<object, Task> OnResponseStartingDelegate = OnResponseStarting;
         private readonly RequestDelegate _next;
@@ -118,19 +116,6 @@ namespace Microsoft.AspNetCore.Cors.Infrastructure
         /// <inheritdoc />
         public Task Invoke(HttpContext context, ICorsPolicyProvider corsPolicyProvider)
         {
-            // Flag to indicate to other systems, that CORS middleware was run for this request
-            context.Items[CorsMiddlewareInvokedKey] = CorsMiddlewareInvokedValue;
-
-            if (!context.Request.Headers.ContainsKey(CorsConstants.Origin))
-            {
-                return _next(context);
-            }
-
-            return InvokeCore(context, corsPolicyProvider);
-        }
-
-        private async Task InvokeCore(HttpContext context, ICorsPolicyProvider corsPolicyProvider)
-        {
             // CORS policy resolution rules:
             //
             // 1. If there is an endpoint with IDisableCorsAttribute then CORS is not run
@@ -138,8 +123,19 @@ namespace Microsoft.AspNetCore.Cors.Infrastructure
             //    there is an endpoint with IEnableCorsAttribute that has a policy name then
             //    fetch policy by name, prioritizing it above policy on middleware
             // 3. If there is no policy on middleware then use name on middleware
-
             var endpoint = context.GetEndpoint();
+
+            if (endpoint != null)
+            {
+                // EndpointRoutingMiddleware uses this flag to check if the CORS middleware processed CORS metadata on the endpoint.
+                // The CORS middleware can only make this claim if it observes an actual endpoint.
+                context.Items[CorsMiddlewareWithEndpointInvokedKey] = CorsMiddlewareWithEndpointInvokedValue;
+            }
+
+            if (!context.Request.Headers.ContainsKey(CorsConstants.Origin))
+            {
+                return _next(context);
+            }
 
             // Get the most significant CORS metadata for the endpoint
             // For backwards compatibility reasons this is then downcast to Enable/Disable metadata
@@ -147,10 +143,7 @@ namespace Microsoft.AspNetCore.Cors.Infrastructure
 
             if (corsMetadata is IDisableCorsAttribute)
             {
-                var isOptionsRequest = string.Equals(
-                    context.Request.Method,
-                    CorsConstants.PreflightHttpMethod,
-                    StringComparison.OrdinalIgnoreCase);
+                var isOptionsRequest = HttpMethods.IsOptions(context.Request.Method);
 
                 var isCorsPreflightRequest = isOptionsRequest && context.Request.Headers.ContainsKey(CorsConstants.AccessControlRequestMethod);
 
@@ -158,11 +151,10 @@ namespace Microsoft.AspNetCore.Cors.Infrastructure
                 {
                     // If this is a preflight request, and we disallow CORS, complete the request
                     context.Response.StatusCode = StatusCodes.Status204NoContent;
-                    return;
+                    return Task.CompletedTask;
                 }
 
-                await _next(context);
-                return;
+                return _next(context);
             }
 
             var corsPolicy = _policy;
@@ -183,14 +175,30 @@ namespace Microsoft.AspNetCore.Cors.Infrastructure
             if (corsPolicy == null)
             {
                 // Resolve policy by name if the local policy is not being used
-                corsPolicy = await corsPolicyProvider.GetPolicyAsync(context, policyName);
+                var policyTask = corsPolicyProvider.GetPolicyAsync(context, policyName);
+                if (!policyTask.IsCompletedSuccessfully)
+                {
+                    return InvokeCoreAwaited(context, policyTask);
+                }
+
+                corsPolicy = policyTask.Result;
             }
 
+            return EvaluateAndApplyPolicy(context, corsPolicy);
+
+            async Task InvokeCoreAwaited(HttpContext context, Task<CorsPolicy> policyTask)
+            {
+                var corsPolicy = await policyTask;
+                await EvaluateAndApplyPolicy(context, corsPolicy);
+            }
+        }
+
+        private Task EvaluateAndApplyPolicy(HttpContext context, CorsPolicy corsPolicy)
+        {
             if (corsPolicy == null)
             {
-                Logger?.NoCorsPolicyFound();
-                await _next(context);
-                return;
+                Logger.NoCorsPolicyFound();
+                return _next(context);
             }
 
             var corsResult = CorsService.EvaluatePolicy(context, corsPolicy);
@@ -201,12 +209,12 @@ namespace Microsoft.AspNetCore.Cors.Infrastructure
                 // Since there is a policy which was identified,
                 // always respond to preflight requests.
                 context.Response.StatusCode = StatusCodes.Status204NoContent;
-                return;
+                return Task.CompletedTask;
             }
             else
             {
                 context.Response.OnStarting(OnResponseStartingDelegate, Tuple.Create(this, context, corsResult));
-                await _next(context);
+                return _next(context);
             }
         }
 
@@ -219,7 +227,7 @@ namespace Microsoft.AspNetCore.Cors.Infrastructure
             }
             catch (Exception exception)
             {
-                middleware.Logger?.FailedToSetCorsHeaders(exception);
+                middleware.Logger.FailedToSetCorsHeaders(exception);
             }
             return Task.CompletedTask;
         }

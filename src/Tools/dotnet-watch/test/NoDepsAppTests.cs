@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Testing;
-using Microsoft.AspNetCore.Testing.xunit;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -44,7 +43,7 @@ namespace Microsoft.DotNet.Watcher.Tools.FunctionalTests
         }
 
         [ConditionalFact]
-        [SkipOnHelix] // https://github.com/aspnet/AspNetCore/issues/8267
+        [SkipOnHelix("https://github.com/aspnet/AspNetCore/issues/8267")]
         public async Task RestartProcessThatTerminatesAfterFileChange()
         {
             await _app.StartWatcherAsync();

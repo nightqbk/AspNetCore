@@ -3,11 +3,13 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Http;
@@ -80,13 +82,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests.TestTrans
                     {
                         context.ServerOptions.ApplicationServices = sp;
                         configureKestrel(context.ServerOptions);
-
-                        // Prevent ListenOptions reuse. This is easily done accidentally when trying to debug a test by running it
-                        // in a loop, but will cause problems because only the app func from the first loop will ever be invoked.
-                        Assert.All(context.ServerOptions.ListenOptions, lo =>
-                            Assert.Equal(context.ExpectedConnectionMiddlewareCount, lo._middleware.Count));
-
-                        return new KestrelServer(_transportFactory, context);
+                        return new KestrelServer(new List<IConnectionListenerFactory>() { _transportFactory }, context);
                     });
                 });
 
@@ -102,8 +98,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests.TestTrans
 
         public InMemoryConnection CreateConnection()
         {
-            var transportConnection = new InMemoryTransportConnection(_memoryPool, Context.Log);
-            _ = HandleConnection(transportConnection);
+            var transportConnection = new InMemoryTransportConnection(_memoryPool, Context.Log, Context.Scheduler);
+            _transportFactory.AddConnection(transportConnection);
             return new InMemoryConnection(transportConnection);
         }
 
@@ -126,36 +122,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests.TestTrans
         IServiceProvider IStartup.ConfigureServices(IServiceCollection services)
         {
             return services.BuildServiceProvider();
-        }
-
-        private async Task HandleConnection(InMemoryTransportConnection transportConnection)
-        {
-            try
-            {
-                var middlewareTask = _transportFactory.ConnectionDispatcher.OnConnection(transportConnection);
-                var transportTask = CancellationTokenAsTask(transportConnection.ConnectionClosed);
-
-                await transportTask;
-                await middlewareTask;
-
-                transportConnection.Dispose();
-            }
-            catch (Exception ex)
-            {
-                Debug.Assert(false, $"Unexpected exception: {ex}.");
-            }
-        }
-
-        private static Task CancellationTokenAsTask(CancellationToken token)
-        {
-            if (token.IsCancellationRequested)
-            {
-                return Task.CompletedTask;
-            }
-
-            var tcs = new TaskCompletionSource<object>();
-            token.Register(() => tcs.SetResult(null));
-            return tcs.Task;
         }
 
         public async ValueTask DisposeAsync()

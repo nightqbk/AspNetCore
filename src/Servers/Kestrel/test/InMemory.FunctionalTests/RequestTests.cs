@@ -17,13 +17,14 @@ using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure;
 using Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests.TestTransport;
 using Microsoft.AspNetCore.Testing;
-using Microsoft.AspNetCore.Testing.xunit;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
+using Serilog;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
 {
-    public class RequestTests : LoggedTest
+    public class RequestTests : TestApplicationErrorLoggerLoggedTest
     {
         [Fact]
         public async Task StreamsAreNotPersistedAcrossRequests()
@@ -53,30 +54,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                 Assert.Equal(string.Empty, await server.HttpClientSlim.GetStringAsync($"http://localhost:{server.Port}/"));
 
                 Assert.False(requestBodyPersisted);
-                Assert.False(responseBodyPersisted);
-            }
-        }
-
-        [Fact]
-        public async Task PipesAreNotPersistedBySettingStreamPipeWriterAcrossRequests()
-        {
-            var responseBodyPersisted = false;
-            PipeWriter bodyPipe = null;
-            await using (var server = new TestServer(async context =>
-            {
-                if (context.Response.BodyWriter == bodyPipe)
-                {
-                    responseBodyPersisted = true;
-                }
-                bodyPipe = new StreamPipeWriter(new MemoryStream());
-                context.Response.BodyWriter = bodyPipe;
-
-                await context.Response.WriteAsync("hello, world");
-            }, new TestServiceContext(LoggerFactory)))
-            {
-                Assert.Equal(string.Empty, await server.HttpClientSlim.GetStringAsync($"http://localhost:{server.Port}/"));
-                Assert.Equal(string.Empty, await server.HttpClientSlim.GetStringAsync($"http://localhost:{server.Port}/"));
-
                 Assert.False(responseBodyPersisted);
             }
         }
@@ -864,12 +841,11 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
             }
         }
 
-        [Fact]
+        [Fact(Skip = "This test is racy and requires a product change.")]
         public async Task ConnectionClosesWhenFinReceivedBeforeRequestCompletes()
         {
             var testContext = new TestServiceContext(LoggerFactory)
             {
-                // FIN callbacks are scheduled so run inline to make this test more reliable
                 Scheduler = PipeScheduler.Inline
             };
 
@@ -880,6 +856,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                     await connection.Send(
                         "POST / HTTP/1.1");
                     connection.ShutdownSend();
+                    await connection.TransportConnection.WaitForCloseTask;
                     await connection.ReceiveEnd();
                 }
 
@@ -890,6 +867,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                         "Host:",
                         "Content-Length: 7");
                     connection.ShutdownSend();
+                    await connection.TransportConnection.WaitForCloseTask;
                     await connection.ReceiveEnd();
                 }
             }
@@ -1464,6 +1442,39 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
         }
 
         [Fact]
+        public async Task ContentLengthSwallowedUnexpectedEndOfRequestContentDoesNotResultInWarnings()
+        {
+            var testContext = new TestServiceContext(LoggerFactory);
+
+            await using (var server = new TestServer(async httpContext =>
+            {
+                try
+                {
+                    await httpContext.Request.Body.ReadAsync(new byte[1], 0, 1);
+                }
+                catch
+                {
+                }
+            }, testContext))
+            {
+                using (var connection = server.CreateConnection())
+                {
+                    await connection.Send(
+                        "POST / HTTP/1.1",
+                        "Host:",
+                        "Content-Length: 5",
+                        "",
+                        "");
+                    connection.ShutdownSend();
+
+                    await connection.ReceiveEnd();
+                }
+            }
+
+            Assert.Empty(TestApplicationErrorLogger.Messages.Where(m => m.LogLevel >= LogLevel.Warning));
+        }
+
+        [Fact]
         public async Task ContentLengthRequestCallCancelPendingReadWorks()
         {
             var tcs = new TaskCompletionSource<object>();
@@ -1556,6 +1567,47 @@ namespace Microsoft.AspNetCore.Server.Kestrel.InMemory.FunctionalTests
                         "Hello World");
                 }
             }
+        }
+
+        [Fact]
+        public async Task ContentLengthRequestCallCompleteDoesNotCauseException()
+        {
+            var testContext = new TestServiceContext(LoggerFactory);
+
+            var tcs = new TaskCompletionSource<object>();
+            await using (var server = new TestServer(async httpContext =>
+            {
+                var request = httpContext.Request;
+
+                var readResult = await request.BodyReader.ReadAsync();
+                request.BodyReader.AdvanceTo(readResult.Buffer.End);
+
+                httpContext.Request.BodyReader.Complete();
+
+                tcs.SetResult(null);
+
+            }, testContext))
+            {
+                using (var connection = server.CreateConnection())
+                {
+                    await connection.Send(
+                        "POST / HTTP/1.1",
+                        "Host:",
+                        "Content-Length: 5",
+                        "",
+                        "He");
+                    await tcs.Task;
+                    await connection.Send("llo");
+                    await connection.Receive(
+                        "HTTP/1.1 200 OK",
+                        $"Date: {testContext.DateHeaderValue}",
+                        "Content-Length: 0",
+                        "",
+                        "");
+                }
+            }
+
+            Assert.All(TestSink.Writes, w => Assert.InRange(w.LogLevel, LogLevel.Trace, LogLevel.Information));
         }
 
         [Fact]

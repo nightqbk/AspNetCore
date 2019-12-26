@@ -17,10 +17,10 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
     {
         private static DataAnnotationsMetadataProvider CreateDefaultDataAnnotationsProvider(IStringLocalizerFactory stringLocalizerFactory)
         {
-            var options = Options.Create(new MvcDataAnnotationsLocalizationOptions());
-            options.Value.DataAnnotationLocalizerProvider = (modelType, localizerFactory) => localizerFactory.Create(modelType);
+            var localizationOptions = Options.Create(new MvcDataAnnotationsLocalizationOptions());
+            localizationOptions.Value.DataAnnotationLocalizerProvider = (modelType, localizerFactory) => localizerFactory.Create(modelType);
 
-            return new DataAnnotationsMetadataProvider(options, stringLocalizerFactory);
+            return new DataAnnotationsMetadataProvider(new MvcOptions(), localizationOptions, stringLocalizerFactory);
         }
 
         // Creates a provider with all the defaults - includes data annotations
@@ -50,6 +50,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                 new DefaultBindingMetadataProvider(),
                 new DefaultValidationMetadataProvider(),
                 new DataAnnotationsMetadataProvider(
+                    new MvcOptions(),
                     Options.Create(new MvcDataAnnotationsLocalizationOptions()),
                     stringLocalizerFactory: null),
                 new DataMemberRequiredBindingMetadataProvider(),
@@ -92,6 +93,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
                       new DefaultBindingMetadataProvider(),
                       new DefaultValidationMetadataProvider(),
                       new DataAnnotationsMetadataProvider(
+                          new MvcOptions(),
                           Options.Create(new MvcDataAnnotationsLocalizationOptions()),
                           stringLocalizerFactory: null),
                       detailsProvider
@@ -120,7 +122,7 @@ namespace Microsoft.AspNetCore.Mvc.ModelBinding
             var property = containerType.GetRuntimeProperty(propertyName);
             Assert.NotNull(property);
 
-            var key = ModelMetadataIdentity.ForProperty(property.PropertyType, propertyName, containerType);
+            var key = ModelMetadataIdentity.ForProperty(property, property.PropertyType, containerType);
 
             var builder = new MetadataBuilder(key);
             _detailsProvider.Builders.Add(builder);

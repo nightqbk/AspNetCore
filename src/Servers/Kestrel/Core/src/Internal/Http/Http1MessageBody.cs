@@ -2,7 +2,9 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
+using System.Diagnostics;
 using System.IO.Pipelines;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure;
@@ -12,33 +14,36 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
     internal abstract class Http1MessageBody : MessageBody
     {
         protected readonly Http1Connection _context;
+        protected bool _completed;
 
         protected Http1MessageBody(Http1Connection context)
-            : base(context, context.MinRequestBodyDataRate)
+            : base(context)
         {
             _context = context;
         }
 
-        protected void CheckCompletedReadResult(ReadResult result)
+        [StackTraceHidden]
+        protected void ThrowUnexpectedEndOfRequestContent()
         {
-            if (result.IsCompleted)
-            {
-                // OnInputOrOutputCompleted() is an idempotent method that closes the connection. Sometimes
-                // input completion is observed here before the Input.OnWriterCompleted() callback is fired,
-                // so we call OnInputOrOutputCompleted() now to prevent a race in our tests where a 400
-                // response is written after observing the unexpected end of request content instead of just
-                // closing the connection without a response as expected.
-                _context.OnInputOrOutputCompleted();
+            // OnInputOrOutputCompleted() is an idempotent method that closes the connection. Sometimes
+            // input completion is observed here before the Input.OnWriterCompleted() callback is fired,
+            // so we call OnInputOrOutputCompleted() now to prevent a race in our tests where a 400
+            // response is written after observing the unexpected end of request content instead of just
+            // closing the connection without a response as expected.
+            _context.OnInputOrOutputCompleted();
 
-                BadHttpRequestException.Throw(RequestRejectionReason.UnexpectedEndOfRequestContent);
-            }
+            BadHttpRequestException.Throw(RequestRejectionReason.UnexpectedEndOfRequestContent);
         }
+
+        public abstract bool TryReadInternal(out ReadResult readResult);
+
+        public abstract ValueTask<ReadResult> ReadAsyncInternal(CancellationToken cancellationToken = default);
 
         protected override Task OnConsumeAsync()
         {
             try
             {
-                if (TryRead(out var readResult))
+                while (TryReadInternal(out var readResult))
                 {
                     AdvanceTo(readResult.Buffer.End);
 
@@ -79,7 +84,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
                 ReadResult result;
                 do
                 {
-                    result = await ReadAsync();
+                    result = await ReadAsyncInternal();
                     AdvanceTo(result.Buffer.End);
                 } while (!result.IsCompleted);
             }
@@ -129,6 +134,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
                     BadHttpRequestException.Throw(RequestRejectionReason.UpgradeRequestCannotHavePayload);
                 }
 
+                context.OnTrailersComplete(); // No trailers for these.
                 return new Http1UpgradeMessageBody(context);
             }
 
@@ -173,7 +179,16 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http
                 BadHttpRequestException.Throw(requestRejectionReason, context.Method);
             }
 
+            context.OnTrailersComplete(); // No trailers for these.
             return keepAlive ? MessageBody.ZeroContentLengthKeepAlive : MessageBody.ZeroContentLengthClose;
+        }
+
+        protected void ThrowIfCompleted()
+        {
+            if (_completed)
+            {
+                throw new InvalidOperationException("Reading is not allowed after the reader was completed.");
+            }
         }
     }
 }

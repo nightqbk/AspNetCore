@@ -3,7 +3,6 @@
 
 
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Microsoft.CodeAnalysis;
@@ -24,8 +23,7 @@ namespace Microsoft.AspNetCore.Mvc.Analyzers
 
             context.RegisterCompilationStartAction(compilationStartAnalysisContext =>
             {
-                var typeCache = new SymbolCache(compilationStartAnalysisContext.Compilation);
-                if (typeCache.ControllerAttribute == null || typeCache.ControllerAttribute.TypeKind == TypeKind.Error)
+                if (!SymbolCache.TryCreate(compilationStartAnalysisContext.Compilation, out var typeCache))
                 {
                     // No-op if we can't find types we care about.
                     return;
@@ -91,9 +89,14 @@ namespace Microsoft.AspNetCore.Mvc.Analyzers
                 return false;
             }
 
-            if (SpecifiesModelType(symbolCache, parameter))
+            if (SpecifiesModelType(in symbolCache, parameter))
             {
                 // Ignore parameters that specify a model type.
+                return false;
+            }
+
+            if (!IsComplexType(parameter.Type))
+            {
                 return false;
             }
 
@@ -122,6 +125,26 @@ namespace Microsoft.AspNetCore.Mvc.Analyzers
             }
 
             return false;
+        }
+
+        private static bool IsComplexType(ITypeSymbol type)
+        {
+            // This analyzer should not apply to simple types. In MVC, a simple type is any type that has a type converter that returns true for TypeConverter.CanConvertFrom(typeof(string)).
+            // Unfortunately there isn't a Roslyn way of determining if a TypeConverter exists for a given symbol or if the converter allows string conversions.
+            // https://github.com/dotnet/corefx/blob/v3.0.0-preview8.19405.3/src/System.ComponentModel.TypeConverter/src/System/ComponentModel/ReflectTypeDescriptionProvider.cs#L103-L141
+            // provides a list of types that have built-in converters.
+            // We'll use a simpler heuristic in the analyzer: A type is simple if it's a value type or if it's in the "System.*" namespace hierarchy.
+
+            var @namespace = type.ContainingNamespace?.ToString();
+            if (@namespace != null)
+            {
+                // Things in the System.* namespace hierarchy don't count as complex types. This workarounds
+                // the problem of discovering type converters on types in mscorlib.
+                return @namespace != "System" &&
+                    !@namespace.StartsWith("System.", StringComparison.Ordinal);
+            }
+
+            return true;
         }
 
         internal static string GetName(in SymbolCache symbolCache, ISymbol symbol)
@@ -185,20 +208,100 @@ namespace Microsoft.AspNetCore.Mvc.Analyzers
 
         internal readonly struct SymbolCache
         {
-            public SymbolCache(Compilation compilation)
+            public SymbolCache(
+                INamedTypeSymbol bindAttribute,
+                INamedTypeSymbol controllerAttribute,
+                INamedTypeSymbol fromBodyAttribute,
+                INamedTypeSymbol apiBehaviorMetadata,
+                INamedTypeSymbol binderTypeProviderMetadata,
+                INamedTypeSymbol modelNameProvider,
+                INamedTypeSymbol nonControllerAttribute,
+                INamedTypeSymbol nonActionAttribute,
+                IMethodSymbol disposableDispose)
             {
-                BindAttribute = compilation.GetTypeByMetadataName(SymbolNames.BindAttribute);
-                ControllerAttribute = compilation.GetTypeByMetadataName(SymbolNames.ControllerAttribute);
-                FromBodyAttribute = compilation.GetTypeByMetadataName(SymbolNames.FromBodyAttribute);
-                IApiBehaviorMetadata = compilation.GetTypeByMetadataName(SymbolNames.IApiBehaviorMetadata);
-                IBinderTypeProviderMetadata = compilation.GetTypeByMetadataName(SymbolNames.IBinderTypeProviderMetadata);
-                IModelNameProvider = compilation.GetTypeByMetadataName(SymbolNames.IModelNameProvider);
-                NonControllerAttribute = compilation.GetTypeByMetadataName(SymbolNames.NonControllerAttribute);
-                NonActionAttribute = compilation.GetTypeByMetadataName(SymbolNames.NonActionAttribute);
+                BindAttribute = bindAttribute;
+                ControllerAttribute = controllerAttribute;
+                FromBodyAttribute = fromBodyAttribute;
+                IApiBehaviorMetadata = apiBehaviorMetadata;
+                IBinderTypeProviderMetadata = binderTypeProviderMetadata;
+                IModelNameProvider = modelNameProvider;
+                NonControllerAttribute = nonControllerAttribute;
+                NonActionAttribute = nonActionAttribute;
+                IDisposableDispose = disposableDispose;
+            }
+
+            public static bool TryCreate(Compilation compilation, out SymbolCache symbolCache)
+            {
+                symbolCache = default;
+
+                if (!TryGetType(SymbolNames.BindAttribute, out var bindAttribute))
+                {
+                    return false;
+                }
+
+
+                if (!TryGetType(SymbolNames.ControllerAttribute, out var controllerAttribute))
+                {
+                    return false;
+                }
+
+
+                if (!TryGetType(SymbolNames.FromBodyAttribute, out var fromBodyAttribute))
+                {
+                    return false;
+                }
+
+                if (!TryGetType(SymbolNames.IApiBehaviorMetadata, out var apiBehaviorMetadata))
+                {
+                    return false;
+                }
+
+                if (!TryGetType(SymbolNames.IBinderTypeProviderMetadata, out var iBinderTypeProviderMetadata))
+                {
+                    return false;
+                }
+
+                if (!TryGetType(SymbolNames.IModelNameProvider, out var iModelNameProvider))
+                {
+                    return false;
+                }
+
+                if (!TryGetType(SymbolNames.NonControllerAttribute, out var nonControllerAttribute))
+                {
+                    return false;
+                }
+
+                if (!TryGetType(SymbolNames.NonActionAttribute, out var nonActionAttribute))
+                {
+                    return false;
+                }
 
                 var disposable = compilation.GetSpecialType(SpecialType.System_IDisposable);
-                var members = disposable.GetMembers(nameof(IDisposable.Dispose));
-                IDisposableDispose = members.Length == 1 ? (IMethodSymbol)members[0] : null;
+                var members = disposable?.GetMembers(nameof(IDisposable.Dispose));
+                var idisposableDispose = (IMethodSymbol?)members?[0];
+                if (idisposableDispose == null)
+                {
+                    return false;
+                }
+
+                symbolCache = new SymbolCache(
+                    bindAttribute,
+                    controllerAttribute,
+                    fromBodyAttribute,
+                    apiBehaviorMetadata,
+                    iBinderTypeProviderMetadata,
+                    iModelNameProvider,
+                    nonControllerAttribute,
+                    nonActionAttribute,
+                    idisposableDispose);
+
+                return true;
+
+                bool TryGetType(string typeName, out INamedTypeSymbol typeSymbol)
+                {
+                    typeSymbol = compilation.GetTypeByMetadataName(typeName);
+                    return typeSymbol != null && typeSymbol.TypeKind != TypeKind.Error;
+                }
             }
 
             public INamedTypeSymbol BindAttribute { get; }

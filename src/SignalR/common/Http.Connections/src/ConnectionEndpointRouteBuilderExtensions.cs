@@ -3,8 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.Http.Connections.Internal;
@@ -21,8 +19,8 @@ namespace Microsoft.AspNetCore.Builder
         /// <param name="endpoints">The <see cref="IEndpointRouteBuilder"/> to add the route to.</param>
         /// <param name="pattern">The route pattern.</param>
         /// <param name="configure">A callback to configure the connection.</param>
-        /// <returns>An <see cref="IEndpointConventionBuilder"/> for endpoints associated with the connections.</returns>
-        public static IEndpointConventionBuilder MapConnections(this IEndpointRouteBuilder endpoints, string pattern, Action<IConnectionBuilder> configure) =>
+        /// <returns>An <see cref="ConnectionEndpointRouteBuilder"/> for endpoints associated with the connections.</returns>
+        public static ConnectionEndpointRouteBuilder MapConnections(this IEndpointRouteBuilder endpoints, string pattern, Action<IConnectionBuilder> configure) =>
             endpoints.MapConnections(pattern, new HttpConnectionDispatcherOptions(), configure);
 
         /// <summary>
@@ -31,8 +29,8 @@ namespace Microsoft.AspNetCore.Builder
         /// <typeparam name="TConnectionHandler">The <see cref="ConnectionHandler"/> type.</typeparam>
         /// <param name="endpoints">The <see cref="IEndpointRouteBuilder"/> to add the route to.</param>
         /// <param name="pattern">The route pattern.</param>
-        /// <returns>An <see cref="IEndpointConventionBuilder"/> for endpoints associated with the connections.</returns>
-        public static IEndpointConventionBuilder MapConnectionHandler<TConnectionHandler>(this IEndpointRouteBuilder endpoints, string pattern) where TConnectionHandler : ConnectionHandler
+        /// <returns>An <see cref="ConnectionEndpointRouteBuilder"/> for endpoints associated with the connections.</returns>
+        public static ConnectionEndpointRouteBuilder MapConnectionHandler<TConnectionHandler>(this IEndpointRouteBuilder endpoints, string pattern) where TConnectionHandler : ConnectionHandler
         {
             return endpoints.MapConnectionHandler<TConnectionHandler>(pattern, configureOptions: null);
         }
@@ -44,17 +42,10 @@ namespace Microsoft.AspNetCore.Builder
         /// <param name="endpoints">The <see cref="IEndpointRouteBuilder"/> to add the route to.</param>
         /// <param name="pattern">The route pattern.</param>
         /// <param name="configureOptions">A callback to configure dispatcher options.</param>
-        /// <returns>An <see cref="IEndpointConventionBuilder"/> for endpoints associated with the connections.</returns>
-        public static IEndpointConventionBuilder MapConnectionHandler<TConnectionHandler>(this IEndpointRouteBuilder endpoints, string pattern, Action<HttpConnectionDispatcherOptions> configureOptions) where TConnectionHandler : ConnectionHandler
+        /// <returns>An <see cref="ConnectionEndpointRouteBuilder"/> for endpoints associated with the connections.</returns>
+        public static ConnectionEndpointRouteBuilder MapConnectionHandler<TConnectionHandler>(this IEndpointRouteBuilder endpoints, string pattern, Action<HttpConnectionDispatcherOptions> configureOptions) where TConnectionHandler : ConnectionHandler
         {
             var options = new HttpConnectionDispatcherOptions();
-            // REVIEW: WE should consider removing this and instead just relying on the
-            // AuthorizationMiddleware
-            var attributes = typeof(TConnectionHandler).GetCustomAttributes(inherit: true);
-            foreach (var attribute in attributes.OfType<AuthorizeAttribute>())
-            {
-                options.AuthorizationData.Add(attribute);
-            }
             configureOptions?.Invoke(options);
 
             var conventionBuilder = endpoints.MapConnections(pattern, options, b =>
@@ -62,6 +53,7 @@ namespace Microsoft.AspNetCore.Builder
                 b.UseConnectionHandler<TConnectionHandler>();
             });
 
+            var attributes = typeof(TConnectionHandler).GetCustomAttributes(inherit: true);
             conventionBuilder.Add(e =>
             {
                 // Add all attributes on the ConnectionHandler has metadata (this will allow for things like)
@@ -83,8 +75,8 @@ namespace Microsoft.AspNetCore.Builder
         /// <param name="pattern">The route pattern.</param>
         /// <param name="options">Options used to configure the connection.</param>
         /// <param name="configure">A callback to configure the connection.</param>
-        /// <returns>An <see cref="IEndpointConventionBuilder"/> for endpoints associated with the connections.</returns>
-        public static IEndpointConventionBuilder MapConnections(this IEndpointRouteBuilder endpoints, string pattern, HttpConnectionDispatcherOptions options, Action<IConnectionBuilder> configure)
+        /// <returns>An <see cref="ConnectionEndpointRouteBuilder"/> for endpoints associated with the connections.</returns>
+        public static ConnectionEndpointRouteBuilder MapConnections(this IEndpointRouteBuilder endpoints, string pattern, HttpConnectionDispatcherOptions options, Action<IConnectionBuilder> configure)
         {
             var dispatcher = endpoints.ServiceProvider.GetRequiredService<HttpConnectionDispatcher>();
 
@@ -93,7 +85,7 @@ namespace Microsoft.AspNetCore.Builder
             var connectionDelegate = connectionBuilder.Build();
 
             // REVIEW: Consider expanding the internals of the dispatcher as endpoint routes instead of
-            // using if statemants we can let the matcher handle
+            // using if statements we can let the matcher handle
 
             var conventionBuilders = new List<IEndpointConventionBuilder>();
 
@@ -129,7 +121,7 @@ namespace Microsoft.AspNetCore.Builder
                 }
             });
 
-            return compositeConventionBuilder;
+            return new ConnectionEndpointRouteBuilder(compositeConventionBuilder);
         }
 
         private class CompositeEndpointConventionBuilder : IEndpointConventionBuilder

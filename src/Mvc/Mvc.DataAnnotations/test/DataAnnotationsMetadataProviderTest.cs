@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using System.Linq;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
@@ -90,9 +91,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             object expected)
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var key = ModelMetadataIdentity.ForType(typeof(string));
             var context = new DisplayMetadataProviderContext(key, GetModelAttributes(new object[] { attribute }));
@@ -109,9 +108,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateDisplayMetadata_FindsDisplayFormat_FromDataType()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var dataType = new DataTypeAttribute(DataType.Currency);
             var displayFormat = dataType.DisplayFormat; // Non-null for DataType.Currency.
@@ -131,9 +128,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateDisplayMetadata_FindsDisplayFormat_OverridingDataType()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var dataType = new DataTypeAttribute(DataType.Time); // Has a non-null DisplayFormat.
             var displayFormat = new DisplayFormatAttribute() // But these values override the values from DataType
@@ -156,9 +151,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateBindingMetadata_EditableAttributeFalse_SetsReadOnlyTrue()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var editable = new EditableAttribute(allowEdit: false);
 
@@ -177,9 +170,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateBindingMetadata_EditableAttributeTrue_SetsReadOnlyFalse()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var editable = new EditableAttribute(allowEdit: true);
 
@@ -198,11 +189,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateDisplayMetadata_DisplayAttribute_OverridesDisplayNameAttribute()
         {
             // Arrange
-            var localizationOptions = Options.Create(new MvcDataAnnotationsLocalizationOptions());
-
-            var provider = new DataAnnotationsMetadataProvider(
-                localizationOptions,
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var displayName = new DisplayNameAttribute("DisplayNameAttributeValue");
             var display = new DisplayAttribute()
@@ -225,11 +212,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateDisplayMetadata_DisplayAttribute_OverridesDisplayNameAttribute_IfNameEmpty()
         {
             // Arrange
-            var localizationOptions = Options.Create(new MvcDataAnnotationsLocalizationOptions());
-
-            var provider = new DataAnnotationsMetadataProvider(
-                localizationOptions,
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var displayName = new DisplayNameAttribute("DisplayNameAttributeValue");
             var display = new DisplayAttribute()
@@ -252,11 +235,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateDisplayMetadata_DisplayAttribute_DoesNotOverrideDisplayNameAttribute_IfNameNull()
         {
             // Arrange
-            var localizationOptions = Options.Create(new MvcDataAnnotationsLocalizationOptions());
-
-            var provider = new DataAnnotationsMetadataProvider(
-                localizationOptions,
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var displayName = new DisplayNameAttribute("DisplayNameAttributeValue");
             var display = new DisplayAttribute()
@@ -289,15 +268,13 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
                 .Setup(s => s.Create(typeof(EmptyClass)))
                 .Returns(() => sharedLocalizer.Object);
 
-            var localizationOptions = Options.Create(new MvcDataAnnotationsLocalizationOptions());
-            localizationOptions.Value.DataAnnotationLocalizerProvider = (type, stringLocalizerFactory) =>
+            var localizationOptions = new MvcDataAnnotationsLocalizationOptions();
+            localizationOptions.DataAnnotationLocalizerProvider = (type, stringLocalizerFactory) =>
             {
                 return stringLocalizerFactory.Create(typeof(EmptyClass));
             };
 
-            var provider = new DataAnnotationsMetadataProvider(
-                localizationOptions,
-                stringLocalizerFactory: stringLocalizerFactoryMock.Object);
+            var provider = CreateProvider(options: null, localizationOptions, stringLocalizerFactoryMock.Object);
 
             var displayName = new DisplayNameAttribute("DisplayNameValue");
 
@@ -329,15 +306,13 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
                 .Setup(s => s.Create(typeof(EmptyClass)))
                 .Returns(() => sharedLocalizer.Object);
 
-            var localizationOptions = Options.Create(new MvcDataAnnotationsLocalizationOptions());
-            localizationOptions.Value.DataAnnotationLocalizerProvider = (type, stringLocalizerFactory) =>
+            var localizationOptions = new MvcDataAnnotationsLocalizationOptions();
+            localizationOptions.DataAnnotationLocalizerProvider = (type, stringLocalizerFactory) =>
             {
                 return stringLocalizerFactory.Create(typeof(EmptyClass));
             };
 
-            var provider = new DataAnnotationsMetadataProvider(
-                localizationOptions,
-                stringLocalizerFactory: stringLocalizerFactoryMock.Object);
+            var provider = CreateProvider(options: null, localizationOptions, stringLocalizerFactoryMock.Object);
 
             var displayName = new DisplayNameAttribute("DisplayNameValue");
 
@@ -363,15 +338,15 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
                 .Setup(s => s.Create(typeof(EmptyClass)))
                 .Returns(() => sharedLocalizer.Object);
 
-            var options = Options.Create(new MvcDataAnnotationsLocalizationOptions());
+            var localizationOptions = new MvcDataAnnotationsLocalizationOptions();
             var dataAnnotationLocalizerProviderWasUsed = false;
-            options.Value.DataAnnotationLocalizerProvider = (type, stringLocalizerFactory) =>
+            localizationOptions.DataAnnotationLocalizerProvider = (type, stringLocalizerFactory) =>
             {
                 dataAnnotationLocalizerProviderWasUsed = true;
                 return stringLocalizerFactory.Create(typeof(EmptyClass));
             };
 
-            var provider = new DataAnnotationsMetadataProvider(options, stringLocalizerFactoryMock.Object);
+            var provider = CreateProvider(options: null, localizationOptions, stringLocalizerFactoryMock.Object);
 
             var display = new DisplayAttribute()
             {
@@ -395,9 +370,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateDisplayMetadata_DisplayAttribute_NameFromResources_NullLocalizer()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var display = new DisplayAttribute()
             {
@@ -432,9 +405,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             stringLocalizerFactory
                 .Setup(s => s.Create(It.IsAny<Type>()))
                 .Returns(() => stringLocalizer.Object);
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory.Object);
+            var provider = CreateProvider(stringLocalizerFactory: stringLocalizerFactory.Object);
 
             var display = new DisplayAttribute()
             {
@@ -469,9 +440,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             stringLocalizerFactory
                 .Setup(s => s.Create(It.IsAny<Type>()))
                 .Returns(() => stringLocalizer.Object);
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory.Object);
+            var provider = CreateProvider(stringLocalizerFactory: stringLocalizerFactory.Object);
 
             var display = new DisplayAttribute()
             {
@@ -500,9 +469,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateDisplayMetadata_DisplayAttribute_DescriptionFromResources_NullLocalizer()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var display = new DisplayAttribute()
             {
@@ -537,9 +504,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             stringLocalizerFactory
                 .Setup(s => s.Create(It.IsAny<Type>()))
                 .Returns(() => stringLocalizer.Object);
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory.Object);
+            var provider = CreateProvider(stringLocalizerFactory: stringLocalizerFactory.Object);
 
             var display = new DisplayAttribute()
             {
@@ -568,9 +533,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateDisplayMetadata_DisplayAttribute_PromptFromResources_NullLocalizer()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var display = new DisplayAttribute()
             {
@@ -613,13 +576,13 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             stringLocalizerFactoryMock
                 .Setup(f => f.Create(It.IsAny<Type>()))
                 .Returns(stringLocalizer.Object);
-            var options = Options.Create(new MvcDataAnnotationsLocalizationOptions());
-            options.Value.DataAnnotationLocalizerProvider = (type, stringLocalizerFactory) =>
+            var localizationOptions = new MvcDataAnnotationsLocalizationOptions();
+            localizationOptions.DataAnnotationLocalizerProvider = (type, stringLocalizerFactory) =>
             {
                 return stringLocalizerFactory.Create(type);
             };
 
-            var provider = new DataAnnotationsMetadataProvider(options, stringLocalizerFactoryMock.Object);
+            var provider = CreateProvider(options: null, localizationOptions, stringLocalizerFactoryMock.Object);
 
             var display = new DisplayAttribute()
             {
@@ -636,13 +599,13 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             provider.CreateDisplayMetadata(context);
 
             // Assert
-            using(new CultureReplacer("en-US", "en-US"))
+            using (new CultureReplacer("en-US", "en-US"))
             {
                 Assert.Equal("name from localizer en-US", context.DisplayMetadata.DisplayName());
                 Assert.Equal("description from localizer en-US", context.DisplayMetadata.Description());
                 Assert.Equal("prompt from localizer en-US", context.DisplayMetadata.Placeholder());
             }
-            using(new CultureReplacer("fr-FR", "fr-FR"))
+            using (new CultureReplacer("fr-FR", "fr-FR"))
             {
                 Assert.Equal("name from localizer fr-FR", context.DisplayMetadata.DisplayName());
                 Assert.Equal("description from localizer fr-FR", context.DisplayMetadata.Description());
@@ -671,9 +634,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateDisplayMetadata_IsEnum_ReflectsModelType(Type type, bool expectedIsEnum)
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var key = ModelMetadataIdentity.ForType(type);
             var attributes = new object[0];
@@ -707,9 +668,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateDisplayMetadata_IsFlagsEnum_ReflectsModelType(Type type, bool expectedIsFlagsEnum)
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var key = ModelMetadataIdentity.ForType(type);
             var attributes = new object[0];
@@ -841,9 +800,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             IReadOnlyDictionary<string, string> expectedDictionary)
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var key = ModelMetadataIdentity.ForType(type);
             var attributes = new object[0];
@@ -887,9 +844,9 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
                 .Setup(f => f.Create(It.IsAny<Type>()))
                 .Returns(stringLocalizer.Object);
 
-            var options = Options.Create(new MvcDataAnnotationsLocalizationOptions());
-            options.Value.DataAnnotationLocalizerProvider = (modelType, stringLocalizerFactory) => stringLocalizerFactory.Create(modelType);
-            var provider = new DataAnnotationsMetadataProvider(options, stringLocalizerFactoryMock.Object);
+            var localizationOptions = new MvcDataAnnotationsLocalizationOptions();
+            localizationOptions.DataAnnotationLocalizerProvider = (modelType, stringLocalizerFactory) => stringLocalizerFactory.Create(modelType);
+            var provider = CreateProvider(options: null, localizationOptions, stringLocalizerFactoryMock.Object);
 
             // Act
             provider.CreateDisplayMetadata(context);
@@ -1021,9 +978,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             IEnumerable<KeyValuePair<EnumGroupAndName, string>> expectedKeyValuePairs)
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var key = ModelMetadataIdentity.ForType(type);
             var attributes = new object[0];
@@ -1051,9 +1006,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
                 new KeyValuePair<EnumGroupAndName, string>(new EnumGroupAndName(string.Empty, nameof(EnumWithDisplayOrder.Null)), "3"),
             };
 
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var key = ModelMetadataIdentity.ForType(typeof(EnumWithDisplayOrder));
             var attributes = new object[0];
@@ -1078,12 +1031,12 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             // Assert
             var groupTwo = Assert.Single(enumNameAndGroup, e => e.Value.Equals("2", StringComparison.Ordinal));
 
-            using(new CultureReplacer("en-US", "en-US"))
+            using (new CultureReplacer("en-US", "en-US"))
             {
                 Assert.Equal("Loc_Two_Name", groupTwo.Key.Name);
             }
 
-            using(new CultureReplacer("fr-FR", "fr-FR"))
+            using (new CultureReplacer("fr-FR", "fr-FR"))
             {
                 Assert.Equal("Loc_Two_Name", groupTwo.Key.Name);
             }
@@ -1098,12 +1051,12 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             // Assert
             var groupTwo = Assert.Single(enumNameAndGroup, e => e.Value.Equals("2", StringComparison.Ordinal));
 
-            using(new CultureReplacer("en-US", "en-US"))
+            using (new CultureReplacer("en-US", "en-US"))
             {
                 Assert.Equal("Loc_Two_Name en-US", groupTwo.Key.Name);
             }
 
-            using(new CultureReplacer("fr-FR", "fr-FR"))
+            using (new CultureReplacer("fr-FR", "fr-FR"))
             {
                 Assert.Equal("Loc_Two_Name fr-FR", groupTwo.Key.Name);
             }
@@ -1118,12 +1071,12 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             // Assert
             var groupThree = Assert.Single(enumNameAndGroup, e => e.Value.Equals("3", StringComparison.Ordinal));
 
-            using(new CultureReplacer("en-US", "en-US"))
+            using (new CultureReplacer("en-US", "en-US"))
             {
                 Assert.Equal("type three name en-US", groupThree.Key.Name);
             }
 
-            using(new CultureReplacer("fr-FR", "fr-FR"))
+            using (new CultureReplacer("fr-FR", "fr-FR"))
             {
                 Assert.Equal("type three name fr-FR", groupThree.Key.Name);
             }
@@ -1138,12 +1091,12 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             var groupThree = Assert.Single(enumNameAndGroup, e => e.Value.Equals("3", StringComparison.Ordinal));
 
             // Assert
-            using(new CultureReplacer("en-US", "en-US"))
+            using (new CultureReplacer("en-US", "en-US"))
             {
                 Assert.Equal("type three name en-US", groupThree.Key.Name);
             }
 
-            using(new CultureReplacer("fr-FR", "fr-FR"))
+            using (new CultureReplacer("fr-FR", "fr-FR"))
             {
                 Assert.Equal("type three name fr-FR", groupThree.Key.Name);
             }
@@ -1153,14 +1106,13 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateValidationMetadata_RequiredAttribute_SetsIsRequiredToTrue()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var required = new RequiredAttribute();
 
             var attributes = new Attribute[] { required };
-            var key = ModelMetadataIdentity.ForProperty(typeof(int), "Length", typeof(string));
+            var property = typeof(string).GetProperty(nameof(string.Length));
+            var key = ModelMetadataIdentity.ForProperty(property, typeof(int), typeof(string));
             var context = new ValidationMetadataProviderContext(key, GetModelAttributes(new object[0], attributes));
 
             // Act
@@ -1177,12 +1129,11 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateValidationMetadata_NoRequiredAttribute_IsRequiredLeftAlone(bool? initialValue)
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var attributes = new Attribute[] { };
-            var key = ModelMetadataIdentity.ForProperty(typeof(int), "Length", typeof(string));
+            var property = typeof(string).GetProperty(nameof(string.Length));
+            var key = ModelMetadataIdentity.ForProperty(property, typeof(int), typeof(string));
             var context = new ValidationMetadataProviderContext(key, GetModelAttributes(new object[0], attributes));
             context.ValidationMetadata.IsRequired = initialValue;
 
@@ -1194,12 +1145,271 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         }
 
         [Fact]
+        public void CreateValidationMetadata_InfersRequiredAttribute_NoNonNullableProperty()
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var attributes = ModelAttributes.GetAttributesForProperty(
+                typeof(NullableReferenceTypes),
+                typeof(NullableReferenceTypes).GetProperty(nameof(NullableReferenceTypes.NonNullableReferenceType)));
+            var key = ModelMetadataIdentity.ForProperty(
+                typeof(NullableReferenceTypes).GetProperty(nameof(NullableReferenceTypes.NonNullableReferenceType)),
+                typeof(string),
+                typeof(NullableReferenceTypes));
+            var context = new ValidationMetadataProviderContext(key, attributes);
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.True(context.ValidationMetadata.IsRequired);
+            var attribute = Assert.Single(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+            Assert.True(((RequiredAttribute)attribute).AllowEmptyStrings); // non-Default for [Required]
+        }
+
+        [Fact]
+        public void CreateValidationMetadata_InfersRequiredAttribute_NoNonNullableProperty_PrefersExistingRequiredAttribute()
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var attributes = ModelAttributes.GetAttributesForProperty(
+                typeof(NullableReferenceTypes),
+                typeof(NullableReferenceTypes).GetProperty(nameof(NullableReferenceTypes.NonNullableReferenceTypeWithRequired)));
+
+            var key = ModelMetadataIdentity.ForProperty(
+                typeof(NullableReferenceTypes).GetProperty(nameof(NullableReferenceTypes.NonNullableReferenceTypeWithRequired)),
+                typeof(string),
+                typeof(NullableReferenceTypes));
+            var context = new ValidationMetadataProviderContext(key, attributes);
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.True(context.ValidationMetadata.IsRequired);
+            var attribute = Assert.Single(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute a);
+            Assert.Equal("Test", ((RequiredAttribute)attribute).ErrorMessage);
+            Assert.False(((RequiredAttribute)attribute).AllowEmptyStrings); // Default for [Required]
+        }
+
+        [Fact]
+        public void CreateValidationMetadata_SuppressRequiredInference_Noops()
+        {
+            // Arrange
+            var provider = CreateProvider(options: new MvcOptions()
+            {
+                SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true,
+            });
+
+            var attributes = ModelAttributes.GetAttributesForProperty(
+                typeof(NullableReferenceTypes),
+                typeof(NullableReferenceTypes).GetProperty(nameof(NullableReferenceTypes.NonNullableReferenceType)));
+
+            var key = ModelMetadataIdentity.ForProperty(
+                typeof(NullableReferenceTypes).GetProperty(nameof(NullableReferenceTypes.NonNullableReferenceType)),
+                typeof(string),
+                typeof(NullableReferenceTypes));
+
+            var context = new ValidationMetadataProviderContext(key, attributes);
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.Null(context.ValidationMetadata.IsRequired);
+            Assert.DoesNotContain(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+        }
+
+        [Theory]
+        [InlineData(nameof(DerivedTypeWithAllNonNullProperties.Property1))]
+        [InlineData(nameof(DerivedTypeWithAllNonNullProperties.Property2))]
+        public void CreateValidationMetadata_InfersRequiredAttributeOnDerivedType_BaseAnDerivedTypHaveAllNonNullProperties(string propertyName)
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var modelType = typeof(DerivedTypeWithAllNonNullProperties);
+            var property = modelType.GetProperty(propertyName);
+            var key = ModelMetadataIdentity.ForProperty(property, property.PropertyType, modelType);
+            var context = new ValidationMetadataProviderContext(key, ModelAttributes.GetAttributesForProperty(modelType, property));
+
+            // This test verifies how MVC reads the NullableContextOptions. We expect the property to not have a Nullable attribute on, and for
+            // the types to have NullableContext. We'll encode our expectations as assertions so that we can catch if or when the compiler changes
+            // this behavior and the test needs to be tweaked.
+            Assert.False(DataAnnotationsMetadataProvider.HasNullableAttribute(context.PropertyAttributes, out _), "We do not expect NullableAttribute to be defined on the property");
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.True(context.ValidationMetadata.IsRequired);
+            Assert.Contains(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+        }
+
+        [Fact]
+        public void CreateValidationMetadata_InfersRequiredAttributeOnDerivedType_PropertyDeclaredOnBaseType()
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var modelType = typeof(DerivedTypeWithAllNonNullProperties_WithNullableProperties);
+            var property = modelType.GetProperty(nameof(DerivedTypeWithAllNonNullProperties_WithNullableProperties.Property1));
+            var key = ModelMetadataIdentity.ForProperty(property, property.PropertyType, modelType);
+            var context = new ValidationMetadataProviderContext(key, ModelAttributes.GetAttributesForProperty(modelType, property));
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.True(context.ValidationMetadata.IsRequired);
+            Assert.Contains(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+        }
+
+        [Fact]
+        public void CreateValidationMetadata_InfersRequiredAttributeOnDerivedType_NullablePropertyDeclaredOnDerviedType()
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var modelType = typeof(DerivedTypeWithAllNonNullProperties_WithNullableProperties);
+            var property = modelType.GetProperty(nameof(DerivedTypeWithAllNonNullProperties_WithNullableProperties.Property2));
+            var key = ModelMetadataIdentity.ForProperty(property, property.PropertyType, modelType);
+            var context = new ValidationMetadataProviderContext(key, ModelAttributes.GetAttributesForProperty(modelType, property));
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.Null(context.ValidationMetadata.IsRequired);
+            Assert.DoesNotContain(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+        }
+
+        [Theory]
+        [InlineData(nameof(DerivedTypeWithNullableProperties.Property1))]
+        [InlineData(nameof(DerivedTypeWithNullableProperties.Property2))]
+        public void CreateValidationMetadata_BaseAnDerivedTypHaveAllNullableProperties_DoesNotInferRequiredAttribute(string propertyName)
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var modelType = typeof(DerivedTypeWithNullableProperties);
+            var property = modelType.GetProperty(propertyName);
+            var key = ModelMetadataIdentity.ForProperty(property, property.PropertyType, modelType);
+            var context = new ValidationMetadataProviderContext(key, ModelAttributes.GetAttributesForProperty(modelType, property));
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.Null(context.ValidationMetadata.IsRequired);
+            Assert.DoesNotContain(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+        }
+
+        [Fact]
+        public void CreateValidationMetadata_InfersRequiredAttribute_BaseTypeIsNullable_PropertyIsNotNull()
+        {
+            // Tests the scenario listed in https://github.com/aspnet/AspNetCore/issues/14812
+            // Arrange
+            var provider = CreateProvider();
+
+            var modelType = typeof(DerivedTypeWithNullableProperties_WithNonNullProperties);
+            var property = modelType.GetProperty(nameof(DerivedTypeWithNullableProperties_WithNonNullProperties.Property2));
+            var key = ModelMetadataIdentity.ForProperty(property, property.PropertyType, modelType);
+            var context = new ValidationMetadataProviderContext(key, ModelAttributes.GetAttributesForProperty(modelType, property));
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.True(context.ValidationMetadata.IsRequired);
+            Assert.Contains(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+        }
+
+        [Fact]
+        public void CreateValidationMetadata_InfersRequiredAttribute_ShadowedPropertyIsNonNull()
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var modelType = typeof(DerivedTypeWithNullableProperties_ShadowedProperty);
+            var property = modelType.GetProperty(nameof(DerivedTypeWithNullableProperties_ShadowedProperty.Property1));
+            var key = ModelMetadataIdentity.ForProperty(property, property.PropertyType, modelType);
+            var context = new ValidationMetadataProviderContext(key, ModelAttributes.GetAttributesForProperty(modelType, property));
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.True(context.ValidationMetadata.IsRequired);
+            Assert.Contains(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+        }
+
+        [Fact]
+        public void CreateValidationMetadata_DoesNotInfersRequiredAttribute_TypeImplementingNonNullAbstractClass()
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var modelType = typeof(TypeImplementIInterfaceWithNonNullProperty);
+            var property = modelType.GetProperty(nameof(TypeImplementIInterfaceWithNonNullProperty.Property));
+            var key = ModelMetadataIdentity.ForProperty(property, property.PropertyType, modelType);
+            var context = new ValidationMetadataProviderContext(key, ModelAttributes.GetAttributesForProperty(modelType, property));
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.True(context.ValidationMetadata.IsRequired);
+            Assert.Contains(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+        }
+
+        [Fact]
+        public void CreateValidationMetadata_DoesNotInfersRequiredAttribute_TypeImplementingNonNullAbstractClass_NotNullable()
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var modelType = typeof(TypeImplementIInterfaceWithNonNullProperty_AsNullable);
+            var property = modelType.GetProperty(nameof(TypeImplementIInterfaceWithNonNullProperty_AsNullable.Property));
+            var key = ModelMetadataIdentity.ForProperty(property, property.PropertyType, modelType);
+            var context = new ValidationMetadataProviderContext(key, ModelAttributes.GetAttributesForProperty(modelType, property));
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.Null(context.ValidationMetadata.IsRequired);
+            Assert.DoesNotContain(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+        }
+
+        [Fact]
+        public void CreateValidationMetadata_WithOldModelIdentity_DoesNotInferValueBasedOnContext()
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var modelType = typeof(TypeWithAllNonNullProperties);
+            var property = modelType.GetProperty(nameof(TypeWithAllNonNullProperties.Property1));
+#pragma warning disable CS0618 // Type or member is obsolete
+            var key = ModelMetadataIdentity.ForProperty(property.PropertyType, property.Name, modelType);
+#pragma warning restore CS0618 // Type or member is obsolete
+            var context = new ValidationMetadataProviderContext(key, ModelAttributes.GetAttributesForProperty(modelType, property));
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            Assert.Null(context.ValidationMetadata.IsRequired);
+            Assert.DoesNotContain(context.ValidationMetadata.ValidatorMetadata, m => m is RequiredAttribute);
+        }
+
+        [Fact]
         public void CreateValidationMetadata_WillAddValidationAttributes_From_ValidationProviderAttribute()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
             var validationProviderAttribute = new FooCompositeValidationAttribute(
                 attributes: new List<ValidationAttribute>
                 {
@@ -1208,7 +1418,8 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
                 });
 
             var attributes = new Attribute[] { new EmailAddressAttribute(), validationProviderAttribute };
-            var key = ModelMetadataIdentity.ForProperty(typeof(string), "Length", typeof(string));
+            var property = typeof(string).GetProperty(nameof(string.Length));
+            var key = ModelMetadataIdentity.ForProperty(property, typeof(int), typeof(string));
             var context = new ValidationMetadataProviderContext(key, GetModelAttributes(new object[0], attributes));
 
             // Act
@@ -1232,12 +1443,11 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateBindingMetadata_RequiredAttribute_IsBindingRequiredLeftAlone(bool initialValue)
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var attributes = new Attribute[] { new RequiredAttribute() };
-            var key = ModelMetadataIdentity.ForProperty(typeof(int), "Length", typeof(string));
+            var property = typeof(string).GetProperty(nameof(string.Length));
+            var key = ModelMetadataIdentity.ForProperty(property, typeof(int), typeof(string));
             var context = new BindingMetadataProviderContext(key, GetModelAttributes(new object[0], attributes));
             context.BindingMetadata.IsBindingRequired = initialValue;
 
@@ -1255,12 +1465,11 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateBindingDetails_NoEditableAttribute_IsReadOnlyLeftAlone(bool? initialValue)
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var attributes = new Attribute[] { };
-            var key = ModelMetadataIdentity.ForProperty(typeof(int), "Length", typeof(string));
+            var property = typeof(string).GetProperty(nameof(string.Length));
+            var key = ModelMetadataIdentity.ForProperty(property, typeof(int), typeof(string));
             var context = new BindingMetadataProviderContext(key, GetModelAttributes(new object[0], attributes));
             context.BindingMetadata.IsReadOnly = initialValue;
 
@@ -1275,13 +1484,12 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateValidationDetails_ValidatableObject_ReturnsObject()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var attribute = new TestValidationAttribute();
             var attributes = new Attribute[] { attribute };
-            var key = ModelMetadataIdentity.ForProperty(typeof(int), "Length", typeof(string));
+            var property = typeof(string).GetProperty(nameof(string.Length));
+            var key = ModelMetadataIdentity.ForProperty(property, typeof(int), typeof(string));
             var context = new ValidationMetadataProviderContext(key, GetModelAttributes(new object[0], attributes));
 
             // Act
@@ -1296,13 +1504,12 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
         public void CreateValidationDetails_ValidatableObject_AlreadyInContext_Ignores()
         {
             // Arrange
-            var provider = new DataAnnotationsMetadataProvider(
-                Options.Create(new MvcDataAnnotationsLocalizationOptions()),
-                stringLocalizerFactory: null);
+            var provider = CreateProvider();
 
             var attribute = new TestValidationAttribute();
             var attributes = new Attribute[] { attribute };
-            var key = ModelMetadataIdentity.ForProperty(typeof(int), "Length", typeof(string));
+            var property = typeof(string).GetProperty(nameof(string.Length));
+            var key = ModelMetadataIdentity.ForProperty(property, typeof(int), typeof(string));
             var context = new ValidationMetadataProviderContext(key, GetModelAttributes(new object[0], attributes));
             context.ValidationMetadata.ValidatorMetadata.Add(attribute);
 
@@ -1312,6 +1519,117 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             // Assert
             var validatorMetadata = Assert.Single(context.ValidationMetadata.ValidatorMetadata);
             Assert.Same(attribute, validatorMetadata);
+        }
+
+        [Fact]
+        public void CreateValidationDetails_ForProperty()
+        {
+            // Arrange
+            var provider = CreateProvider();
+
+            var attribute = new TestValidationAttribute();
+            var attributes = new Attribute[] { attribute };
+            var property = typeof(string).GetProperty(nameof(string.Length));
+            var key = ModelMetadataIdentity.ForProperty(property, typeof(int), typeof(string));
+            var context = new ValidationMetadataProviderContext(key, GetModelAttributes(new object[0], attributes));
+            context.ValidationMetadata.ValidatorMetadata.Add(attribute);
+
+            // Act
+            provider.CreateValidationMetadata(context);
+
+            // Assert
+            var validatorMetadata = Assert.Single(context.ValidationMetadata.ValidatorMetadata);
+            Assert.Same(attribute, validatorMetadata);
+        }
+
+        [Fact]
+        public void IsNonNullable_FindsNonNullableProperty()
+        {
+            // Arrange
+            var type = typeof(NullableReferenceTypes);
+            var property = type.GetProperty(nameof(NullableReferenceTypes.NonNullableReferenceType));
+
+            // Act
+            var result = DataAnnotationsMetadataProvider.IsNullableReferenceType(type, member: null, property.GetCustomAttributes(inherit: true));
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void IsNullableReferenceType_ReturnsFalse_ForKeyValuePairWithoutNullableConstraints()
+        {
+            // Arrange
+            var type = typeof(KeyValuePair<string, object>);
+            var property = type.GetProperty(nameof(KeyValuePair<string, object>.Key));
+
+            // Act
+            var result = DataAnnotationsMetadataProvider.IsNullableReferenceType(type, member: null, property.GetCustomAttributes(inherit: true));
+
+            // Assert
+            Assert.False(result);
+        }
+
+#nullable enable
+        [Fact]
+        public void IsNullableReferenceType_ReturnsTrue_ForKeyValuePairWithNullableConstraints()
+        {
+            // Arrange
+            var type = typeof(KeyValuePair<string, object>);
+            var property = type.GetProperty(nameof(KeyValuePair<string, object>.Key))!;
+
+            // Act
+            var result = DataAnnotationsMetadataProvider.IsNullableReferenceType(type, member: null, property.GetCustomAttributes(inherit: true));
+
+            // Assert
+            // While we'd like for result to be 'true', we don't have a very good way of actually calculating it correctly.
+            // This test is primarily here to document the behavior.
+            Assert.False(result);
+        }
+#nullable restore
+
+        [Fact]
+        public void IsNonNullable_FindsNullableProperty()
+        {
+            // Arrange
+            var type = typeof(NullableReferenceTypes);
+            var property = type.GetProperty(nameof(NullableReferenceTypes.NullableReferenceType));
+
+            // Act
+            var result = DataAnnotationsMetadataProvider.IsNullableReferenceType(type, member: null, property.GetCustomAttributes(inherit: true));
+
+            // Assert
+            Assert.False(result);
+        }
+
+        [Fact]
+        public void IsNonNullable_FindsNonNullableParameter()
+        {
+            // Arrange
+            var type = typeof(NullableReferenceTypes);
+            var method = type.GetMethod(nameof(NullableReferenceTypes.Method));
+            var parameter = method.GetParameters().Where(p => p.Name == "nonNullableParameter").Single();
+
+            // Act
+            var result = DataAnnotationsMetadataProvider.IsNullableReferenceType(type, method, parameter.GetCustomAttributes(inherit: true));
+
+            // Assert
+            Assert.True(result);
+        }
+
+        [Fact]
+        public void IsNonNullable_FindsNullableParameter()
+        {
+            // Arrange
+            var type = typeof(NullableReferenceTypes);
+            var method = type.GetMethod(nameof(NullableReferenceTypes.Method));
+            var parameter = method.GetParameters().Where(p => p.Name == "nullableParameter").Single();
+
+            // Act
+            var result = DataAnnotationsMetadataProvider.IsNullableReferenceType(type, method, parameter.GetCustomAttributes(inherit: true));
+
+            // Assert
+            Assert.False(result);
         }
 
         private IEnumerable<KeyValuePair<EnumGroupAndName, string>> GetLocalizedEnumGroupedDisplayNamesAndValues(
@@ -1326,6 +1644,17 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             provider.CreateDisplayMetadata(context);
 
             return context.DisplayMetadata.EnumGroupedDisplayNamesAndValues;
+        }
+
+        private DataAnnotationsMetadataProvider CreateProvider(
+            MvcOptions options = null,
+            MvcDataAnnotationsLocalizationOptions localizationOptions = null,
+            IStringLocalizerFactory stringLocalizerFactory = null)
+        {
+            return new DataAnnotationsMetadataProvider(
+                options ?? new MvcOptions(),
+                Options.Create(localizationOptions ?? new MvcDataAnnotationsLocalizationOptions()),
+                stringLocalizerFactory);
         }
 
         private DataAnnotationsMetadataProvider CreateIStringLocalizerProvider(bool useStringLocalizer)
@@ -1343,20 +1672,18 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
                 .Setup(factory => factory.Create(typeof(EnumWithLocalizedDisplayNames)))
                 .Returns(stringLocalizer.Object);
 
-            var options = Options.Create(new MvcDataAnnotationsLocalizationOptions());
-            options.Value.DataAnnotationLocalizerProvider = (modelType, localizerFactory) => localizerFactory.Create(modelType);
+            var localizationOptions = new MvcDataAnnotationsLocalizationOptions();
+            localizationOptions.DataAnnotationLocalizerProvider = (modelType, localizerFactory) => localizerFactory.Create(modelType);
 
-            return new DataAnnotationsMetadataProvider(
-                options,
-                useStringLocalizer ? stringLocalizerFactory.Object : null);
+            return CreateProvider(options: null, localizationOptions, useStringLocalizer ? stringLocalizerFactory.Object : null);
         }
 
-        private ModelAttributes GetModelAttributes(IEnumerable<object> typeAttributes) 
+        private ModelAttributes GetModelAttributes(IEnumerable<object> typeAttributes)
             => new ModelAttributes(typeAttributes, Array.Empty<object>(), Array.Empty<object>());
 
         private ModelAttributes GetModelAttributes(
             IEnumerable<object> typeAttributes,
-            IEnumerable<object> propertyAttributes) 
+            IEnumerable<object> propertyAttributes)
             => new ModelAttributes(typeAttributes, propertyAttributes, Array.Empty<object>());
 
         private class KVPEnumGroupAndNameComparer : IEqualityComparer<KeyValuePair<EnumGroupAndName, string>>
@@ -1369,7 +1696,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
 
             public bool Equals(KeyValuePair<EnumGroupAndName, string> x, KeyValuePair<EnumGroupAndName, string> y)
             {
-                using(new CultureReplacer(string.Empty, string.Empty))
+                using (new CultureReplacer(string.Empty, string.Empty))
                 {
                     return x.Key.Name.Equals(y.Key.Name, StringComparison.Ordinal)
                         && x.Key.Group.Equals(y.Key.Group, StringComparison.Ordinal);
@@ -1378,7 +1705,7 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
 
             public int GetHashCode(KeyValuePair<EnumGroupAndName, string> obj)
             {
-                using(new CultureReplacer(string.Empty, string.Empty))
+                using (new CultureReplacer(string.Empty, string.Empty))
                 {
                     return obj.Key.GetHashCode();
                 }
@@ -1531,6 +1858,72 @@ namespace Microsoft.AspNetCore.Mvc.DataAnnotations
             {
                 return _attributes;
             }
+        }
+
+#nullable enable
+        private class NullableReferenceTypes
+        {
+            public string NonNullableReferenceType { get; set; } = default!;
+
+            [Required(ErrorMessage = "Test")]
+            public string NonNullableReferenceTypeWithRequired { get; set; } = default!;
+
+            public string? NullableReferenceType { get; set; } = default!;
+
+            public void Method(string nonNullableParameter, string? nullableParameter)
+            {
+            }
+        }
+
+        private class TypeWithAllNonNullProperties
+        {
+            public string Property1 { get; set; } = string.Empty;
+        }
+
+        private class DerivedTypeWithAllNonNullProperties : TypeWithAllNonNullProperties
+        {
+            public string Property2 { get; set; } = string.Empty;
+        }
+
+        private class DerivedTypeWithAllNonNullProperties_WithNullableProperties : TypeWithAllNonNullProperties
+        {
+            public string? Property2 { get; set; } = string.Empty;
+        }
+
+        private class TypeWithNullableProperties
+        {
+            public string? Property1 { get; set; }
+        }
+
+        private class DerivedTypeWithNullableProperties : TypeWithNullableProperties
+        {
+            public string? Property2 { get; set; }
+        }
+
+        private class DerivedTypeWithNullableProperties_WithNonNullProperties : TypeWithNullableProperties
+        {
+            public string Property2 { get; set; } = string.Empty;
+        }
+
+        private class DerivedTypeWithNullableProperties_ShadowedProperty : TypeWithNullableProperties
+        {
+            public new string Property1 { get; set; } = string.Empty;
+        }
+
+        public abstract class AbstraceTypehNonNullProperty
+        {
+            public abstract string Property { get; set; }
+        }
+
+        public class TypeImplementIInterfaceWithNonNullProperty : AbstraceTypehNonNullProperty
+        {
+            public override string Property { get; set; } = string.Empty;
+        }
+#nullable restore
+
+        public class TypeImplementIInterfaceWithNonNullProperty_AsNullable : AbstraceTypehNonNullProperty
+        {
+            public override string Property { get; set; }
         }
     }
 }

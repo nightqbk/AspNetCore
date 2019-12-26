@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 namespace Microsoft.AspNetCore.Mvc
 {
     /// <summary>
-    /// An <see cref="ActionResult"/> that on execution invokes <see cref="M:AuthenticationManager.SignOutAsync"/>.
+    /// An <see cref="ActionResult"/> that on execution invokes <see cref="M:HttpContext.SignOutAsync"/>.
     /// </summary>
     public class SignOutResult : ActionResult
     {
@@ -63,12 +63,7 @@ namespace Microsoft.AspNetCore.Mvc
         /// <param name="properties"><see cref="AuthenticationProperties"/> used to perform the sign-out operation.</param>
         public SignOutResult(IList<string> authenticationSchemes, AuthenticationProperties properties)
         {
-            if (authenticationSchemes == null)
-            {
-                throw new ArgumentNullException(nameof(authenticationSchemes));
-            }
-
-            AuthenticationSchemes = authenticationSchemes;
+            AuthenticationSchemes = authenticationSchemes ?? throw new ArgumentNullException(nameof(authenticationSchemes));
             Properties = properties;
         }
 

@@ -153,7 +153,6 @@ namespace Microsoft.AspNetCore.Server.IntegrationTesting.IIS
         {
             try
             {
-
                 // Handle cases where debug file is redirected by test
                 var debugLogLocations = new List<string>();
                 if (IISDeploymentParameters.HandlerSettings.ContainsKey("debugFile"))
@@ -193,8 +192,6 @@ namespace Microsoft.AspNetCore.Server.IntegrationTesting.IIS
                         return;
                     }
                 }
-
-                throw new InvalidOperationException($"Unable to find non-empty debug log files. Tried: {string.Join(", ", debugLogLocations)}");
             }
             finally
             {
@@ -337,7 +334,7 @@ namespace Microsoft.AspNetCore.Server.IntegrationTesting.IIS
 
             if (DeploymentParameters.RuntimeArchitecture == RuntimeArchitecture.x86)
             {
-                pool.SetAttributeValue("enable32BitAppOnWin64", "true");;
+                pool.SetAttributeValue("enable32BitAppOnWin64", "true");
             }
 
             RunServerConfigActions(config, contentRoot);

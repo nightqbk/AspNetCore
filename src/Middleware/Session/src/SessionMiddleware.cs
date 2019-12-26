@@ -115,7 +115,7 @@ namespace Microsoft.AspNetCore.Session
                 {
                     try
                     {
-                        await feature.Session.CommitAsync(context.RequestAborted);
+                        await feature.Session.CommitAsync();
                     }
                     catch (OperationCanceledException)
                     {
@@ -151,7 +151,7 @@ namespace Microsoft.AspNetCore.Session
                 {
                     establisher.SetCookie();
                 }
-                return Task.FromResult(0);
+                return Task.CompletedTask;
             }
 
             private void SetCookie()

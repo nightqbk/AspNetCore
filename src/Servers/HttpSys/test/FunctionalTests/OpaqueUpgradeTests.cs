@@ -6,12 +6,10 @@ using System.IO;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Testing;
-using Microsoft.AspNetCore.Testing.xunit;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Server.HttpSys
@@ -19,7 +17,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
     public class OpaqueUpgradeTests
     {
         [ConditionalFact]
-        [OSDontSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, WindowsVersions.Win2008R2)]
+        [MaximumOSVersion(OperatingSystems.Windows, WindowsVersions.Win7)]
         public async Task OpaqueUpgrade_DownLevel_FeatureIsAbsent()
         {
             using (Utilities.CreateHttpServer(out var address, httpContext =>
@@ -45,7 +43,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalFact]
-        [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, WindowsVersions.Win2008R2)]
+        [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8)]
         public async Task OpaqueUpgrade_SupportKeys_Present()
         {
             string address;
@@ -72,7 +70,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalFact]
-        [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, WindowsVersions.Win2008R2)]
+        [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8)]
         public async Task OpaqueUpgrade_AfterHeadersSent_Throws()
         {
             bool? upgradeThrew = null;
@@ -102,7 +100,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalFact]
-        [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, WindowsVersions.Win2008R2)]
+        [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8)]
         public async Task OpaqueUpgrade_GetUpgrade_Success()
         {
             var upgraded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -124,7 +122,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalFact]
-        [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, WindowsVersions.Win2008R2)]
+        [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8)]
         public async Task OpaqueUpgrade_GetUpgrade_NotAffectedByMaxRequestBodyLimit()
         {
             var upgraded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -156,7 +154,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalFact]
-        [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, WindowsVersions.Win2008R2)]
+        [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8)]
         public async Task OpaqueUpgrade_WithOnStarting_CallbackCalled()
         {
             var callbackCalled = false;
@@ -185,7 +183,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalTheory]
-        [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, WindowsVersions.Win2008R2)]
+        [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8)]
         // See HTTP_VERB for known verbs
         [InlineData("UNKNOWN", null)]
         [InlineData("INVALID", null)]
@@ -243,7 +241,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalTheory]
-        [OSSkipCondition(OperatingSystems.Windows, WindowsVersions.Win7, WindowsVersions.Win2008R2)]
+        [MinimumOSVersion(OperatingSystems.Windows, WindowsVersions.Win8)]
         // Http.Sys returns a 411 Length Required if PUT or POST does not specify content-length or chunked.
         [InlineData("POST", "Content-Length: 10")]
         [InlineData("POST", "Transfer-Encoding: chunked")]

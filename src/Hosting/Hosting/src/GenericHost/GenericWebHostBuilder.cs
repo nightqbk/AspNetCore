@@ -16,7 +16,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.ObjectPool;
 
-namespace Microsoft.AspNetCore.Hosting.Internal
+namespace Microsoft.AspNetCore.Hosting
 {
     internal class GenericWebHostBuilder : IWebHostBuilder, ISupportsStartup, ISupportsUseDefaultServiceProvider
     {
@@ -57,15 +57,6 @@ namespace Microsoft.AspNetCore.Hosting.Internal
 
             _builder.ConfigureServices((context, services) =>
             {
-                if (_hostingStartupWebHostBuilder != null)
-                {
-                    var webhostContext = GetWebHostBuilderContext(context);
-                    _hostingStartupWebHostBuilder.ConfigureServices(webhostContext, services);
-                }
-            });
-
-            _builder.ConfigureServices((context, services) =>
-            {
                 var webhostContext = GetWebHostBuilderContext(context);
                 var webHostOptions = (WebHostOptions)context.Properties[typeof(WebHostOptions)];
 
@@ -84,8 +75,6 @@ namespace Microsoft.AspNetCore.Hosting.Internal
                     options.HostingStartupExceptions = _hostingStartupErrors;
                 });
 
-                services.AddHostedService<GenericWebHostService>();
-
                 // REVIEW: This is bad since we don't own this type. Anybody could add one of these and it would mess things up
                 // We need to flow this differently
                 var listener = new DiagnosticListener("Microsoft.AspNetCore");
@@ -95,6 +84,9 @@ namespace Microsoft.AspNetCore.Hosting.Internal
                 services.TryAddSingleton<IHttpContextFactory, DefaultHttpContextFactory>();
                 services.TryAddScoped<IMiddlewareFactory, MiddlewareFactory>();
                 services.TryAddSingleton<IApplicationBuilderFactory, ApplicationBuilderFactory>();
+
+                // IMPORTANT: This needs to run *before* direct calls on the builder (like UseStartup)
+                _hostingStartupWebHostBuilder?.ConfigureServices(webhostContext, services);
 
                 // Support UseStartup(assemblyName)
                 if (!string.IsNullOrEmpty(webHostOptions.StartupAssembly))

@@ -1,8 +1,7 @@
-using BasicTestApp;
+using System.IO;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Components.Server;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -21,12 +20,7 @@ namespace TestServer
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddMvc().AddNewtonsoftJson();
-            services.AddCors(options =>
-            {
-                options.AddPolicy("AllowAll", _ => { /* Controlled below */ });
-            });
-            services.AddServerSideBlazor();
+            services.AddSingleton<TestAppInfo>();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -37,58 +31,45 @@ namespace TestServer
                 app.UseDeveloperExceptionPage();
             }
 
-            // It's not enough just to return "Access-Control-Allow-Origin: *", because
-            // browsers don't allow wildcards in conjunction with credentials. So we must
-            // specify explicitly which origin we want to allow.
-            app.UseCors(policy =>
+            app.Run(async ctx =>
             {
-                policy.SetIsOriginAllowed(host => host.StartsWith("http://localhost:") || host.StartsWith("http://127.0.0.1:"))
-                    .AllowAnyHeader()
-                    .WithExposedHeaders("MyCustomHeader")
-                    .AllowAnyMethod()
-                    .AllowCredentials();
-            });
-
-            app.UseRouting();
-
-            // Mount the server-side Blazor app on /subdir
-            app.Map("/subdir", subdirApp =>
-            {
-                // The following two lines are equivalent to:
-                //     endpoints.MapComponentsHub<Index>();
-                //
-                // However it's expressed using routing as a way of checking that
-                // we're not relying on any extra magic inside MapComponentsHub, since it's
-                // important that people can set up these bits of middleware manually (e.g., to
-                // swap in UseAzureSignalR instead of UseSignalR).
-                subdirApp.UseRouting();
-
-                subdirApp.UseEndpoints(endpoints =>
+                var appsInfo = ctx.RequestServices.GetRequiredService<TestAppInfo>();
+                var response = ctx.Response.ContentType = "text/html;charset=utf-8";
+                using var writer = new StringWriter();
+                await writer.WriteAsync(@"<!DOCTYPE html>
+<html>
+  <head>
+    <title>Blazor test server index</title>
+  </head>
+  <body>
+    <table>
+      <tr>
+        <th>Scenario</th>
+        <th>
+          <Link>Link</Link>
+        </th>
+      </tr>
+");
+                foreach (var scenario in appsInfo.Scenarios)
                 {
-                    endpoints.MapHub<ComponentHub>(ComponentHub.DefaultPath).AddComponent(typeof(Index), selector: "root");
-                });
-
-                subdirApp.MapWhen(
-                    ctx => ctx.Features.Get<IEndpointFeature>()?.Endpoint == null,
-                    blazorBuilder => blazorBuilder.UseBlazor<BasicTestApp.Startup>());
-            });
-
-            app.UseEndpoints(endpoints =>
-            {
-                endpoints.MapControllers();
-            });
-
-            // Separately, mount a prerendered server-side Blazor app on /prerendered
-            app.Map("/prerendered", subdirApp =>
-            {
-                subdirApp.UsePathBase("/prerendered");
-                subdirApp.UseStaticFiles();
-                subdirApp.UseRouting();
-                subdirApp.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapFallbackToPage("/PrerenderedHost");
-                    endpoints.MapBlazorHub();
-                });
+                    await writer.WriteAsync(@$"
+      <tr>
+        <td>{scenario.Key}</td>
+        <td><a href=""{scenario.Value}"">{scenario.Value}</a></td>
+      </tr>
+");
+                }
+                await writer.WriteAsync(@"
+    </table>
+    <style>
+        table, th, td, tr { border: 1px solid black; }
+        th { font-weight: bold; }
+    <style>
+  </body>
+</html>");
+                var content = writer.ToString();
+                ctx.Response.ContentLength = content.Length;
+                await ctx.Response.WriteAsync(content);
             });
         }
     }

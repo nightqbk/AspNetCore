@@ -7,7 +7,7 @@ import * as msgpack5 from "msgpack5";
 import {
     CancelInvocationMessage, CompletionMessage, HubMessage, IHubProtocol, ILogger, InvocationMessage,
     LogLevel, MessageHeaders, MessageType, NullLogger, StreamInvocationMessage, StreamItemMessage, TransferFormat,
-} from "@aspnet/signalr";
+} from "@microsoft/signalr";
 
 import { BinaryMessageFormat } from "./BinaryMessageFormat";
 import { isArrayBuffer } from "./Utils";
@@ -124,6 +124,7 @@ export class MessagePackHubProtocol implements IHubProtocol {
 
         return {
             // Close messages have no headers.
+            allowReconnect: properties.length >= 3 ? properties[2] : undefined,
             error: properties[1],
             type: MessageType.Close,
         } as HubMessage;

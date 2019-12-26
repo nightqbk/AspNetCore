@@ -59,11 +59,10 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
         [Fact]
         public async Task ClosedEventRaisedWhenTheClientIsStopped()
         {
-            var builder = new HubConnectionBuilder();
+            var builder = new HubConnectionBuilder().WithUrl("http://example.com");
 
             var delegateConnectionFactory = new DelegateConnectionFactory(
-                format => new TestConnection().StartAsync(format),
-                connection => ((TestConnection)connection).DisposeAsync());
+                endPoint => new TestConnection().StartAsync());
             builder.Services.AddSingleton<IConnectionFactory>(delegateConnectionFactory);
 
             var hubConnection = builder.Build();
@@ -339,7 +338,6 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
                 // after cancellation, don't send from the pipe
                 foreach (var number in new[] { 42, 43, 322, 3145, -1234 })
                 {
-
                     await channel.Writer.WriteAsync(number);
                 }
 
@@ -413,6 +411,17 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
                 catch (Exception)
                 {
                 }
+            }
+        }
+
+        [Fact]
+        public async Task CanAwaitUsingHubConnection()
+        {
+            using (StartVerifiableLog())
+            {
+                var connection = new TestConnection();
+                await using var hubConnection = CreateHubConnection(connection, loggerFactory: LoggerFactory);
+                await hubConnection.StartAsync().OrTimeout();
             }
         }
 

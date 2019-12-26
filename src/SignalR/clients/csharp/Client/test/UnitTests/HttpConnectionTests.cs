@@ -77,7 +77,7 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
                 CreateConnection(httpOptions),
                 async (connection) =>
                 {
-                    await connection.StartAsync(TransferFormat.Text).OrTimeout();
+                    await connection.StartAsync().OrTimeout();
                 });
 
             Assert.NotNull(httpClientHandler);
@@ -87,6 +87,14 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
             Assert.False(httpClientHandler.UseDefaultCredentials);
             Assert.Same(httpOptions.Proxy, httpClientHandler.Proxy);
             Assert.Same(httpOptions.Credentials, httpClientHandler.Credentials);
+        }
+
+        [Fact]
+        public void HttpOptionsCannotSetNullCookieContainer()
+        {
+            var httpOptions = new HttpConnectionOptions();
+            Assert.NotNull(httpOptions.Cookies);
+            Assert.Throws<ArgumentNullException>(() => httpOptions.Cookies = null);
         }
 
         [Fact]
@@ -115,7 +123,7 @@ namespace Microsoft.AspNetCore.SignalR.Client.Tests
                     CreateConnection(httpOptions, loggerFactory: mockLoggerFactory.Object),
                     async (connection) =>
                     {
-                        await connection.StartAsync(TransferFormat.Text).OrTimeout();
+                        await connection.StartAsync().OrTimeout();
                     });
             }
             catch

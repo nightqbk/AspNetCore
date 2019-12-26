@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Testing;
-using Microsoft.AspNetCore.Testing.xunit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
 using OpenQA.Selenium.Chrome;
@@ -84,7 +83,7 @@ namespace Interop.FunctionalTests
                 .ConfigureServices(AddTestLogging)
                 .Configure(app => app.Run(async context =>
                 {
-                    if (string.Equals(context.Request.Query["TestMethod"], "POST", StringComparison.OrdinalIgnoreCase))
+                    if (HttpMethods.IsPost(context.Request.Query["TestMethod"]))
                     {
                         await context.Response.WriteAsync(_postHtml);
                     }

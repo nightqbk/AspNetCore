@@ -14,7 +14,7 @@ namespace Microsoft.AspNetCore.Identity.FunctionalTests
         where TStartup : class
         where TContext : DbContext
     {
-        public RegistrationTests(ServerFactory<TStartup, TContext> serverFactory)
+        protected RegistrationTests(ServerFactory<TStartup, TContext> serverFactory)
         {
             ServerFactory = serverFactory;
         }
@@ -127,6 +127,52 @@ namespace Microsoft.AspNetCore.Identity.FunctionalTests
 
             // Act & Assert
             await UserStories.RegisterNewUserWithSocialLoginAsync(client, userName, email);
+        }
+
+        [Fact]
+        public async Task CanRegisterWithASocialLoginProviderFromLoginWithConfirmation()
+        {
+            // Arrange
+            void ConfigureTestServices(IServiceCollection services)
+            {
+                services.Configure<IdentityOptions>(o => o.SignIn.RequireConfirmedAccount = true)
+                        .SetupTestThirdPartyLogin();
+            }
+
+            var client = ServerFactory
+                .WithWebHostBuilder(whb => whb.ConfigureServices(ConfigureTestServices))
+                .CreateClient();
+
+            var guid = Guid.NewGuid();
+            var userName = $"{guid}";
+            var email = $"{guid}@example.com";
+
+            // Act & Assert
+            await UserStories.RegisterNewUserWithSocialLoginWithConfirmationAsync(client, userName, email);
+        }
+
+        [Fact]
+        public async Task CanRegisterWithASocialLoginProviderFromLoginWithConfirmationAndRealEmailSender()
+        {
+            // Arrange
+            void ConfigureTestServices(IServiceCollection services)
+            {
+                services.AddSingleton<IEmailSender, FakeEmailSender>();
+                services
+                        .Configure<IdentityOptions>(o => o.SignIn.RequireConfirmedAccount = true)
+                        .SetupTestThirdPartyLogin();
+            }
+
+            var client = ServerFactory
+                .WithWebHostBuilder(whb => whb.ConfigureServices(ConfigureTestServices))
+                .CreateClient();
+
+            var guid = Guid.NewGuid();
+            var userName = $"{guid}";
+            var email = $"{guid}@example.com";
+
+            // Act & Assert
+            await UserStories.RegisterNewUserWithSocialLoginWithConfirmationAsync(client, userName, email, hasRealEmailSender: true);
         }
 
         [Fact]

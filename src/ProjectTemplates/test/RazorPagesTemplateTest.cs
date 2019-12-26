@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Testing;
 using Templates.Test.Helpers;
 using Xunit;
 using Xunit.Abstractions;
@@ -25,7 +26,7 @@ namespace Templates.Test
         public ITestOutputHelper Output { get; }
 
         [Fact]
-        public async Task RazorPagesTemplate_NoAuthImplAsync()
+        public async Task RazorPagesTemplate_NoAuth()
         {
             Project = await ProjectFactory.GetOrCreateProject("razorpagesnoauth", Output);
 
@@ -43,7 +44,7 @@ namespace Templates.Test
             Assert.True(0 == publishResult.ExitCode, ErrorMessages.GetFailedProcessMessage("publish", Project, createResult));
 
             // Run dotnet build after publish. The reason is that one uses Config = Debug and the other uses Config = Release
-            // The output from publish will go into bin/Release/netcoreapp3.0/publish and won't be affected by calling build
+            // The output from publish will go into bin/Release/netcoreappX.Y/publish and won't be affected by calling build
             // later, while the opposite is not true.
 
             var buildResult = await Project.RunDotNetBuildAsync();
@@ -58,7 +59,6 @@ namespace Templates.Test
                         PageUrls.HomeUrl,
                         PageUrls.HomeUrl,
                         PageUrls.PrivacyUrl,
-                        PageUrls.PrivacyUrl,
                         PageUrls.DocsUrl,
                         PageUrls.PrivacyUrl
                     }
@@ -69,7 +69,6 @@ namespace Templates.Test
                     Links = new string[] {
                         PageUrls.HomeUrl,
                         PageUrls.HomeUrl,
-                        PageUrls.PrivacyUrl,
                         PageUrls.PrivacyUrl,
                         PageUrls.PrivacyUrl }
                 }
@@ -97,7 +96,7 @@ namespace Templates.Test
         [Theory]
         [InlineData(false)]
         [InlineData(true)]
-        public async Task RazorPagesTemplate_IndividualAuthImplAsync(bool useLocalDB)
+        public async Task RazorPagesTemplate_IndividualAuth(bool useLocalDB)
         {
             Project = await ProjectFactory.GetOrCreateProject("razorpagesindividual" + (useLocalDB ? "uld" : ""), Output);
 
@@ -114,7 +113,7 @@ namespace Templates.Test
             Assert.True(0 == publishResult.ExitCode, ErrorMessages.GetFailedProcessMessage("publish", Project, publishResult));
 
             // Run dotnet build after publish. The reason is that one uses Config = Debug and the other uses Config = Release
-            // The output from publish will go into bin/Release/netcoreapp3.0/publish and won't be affected by calling build
+            // The output from publish will go into bin/Release/netcoreappX.Y/publish and won't be affected by calling build
             // later, while the opposite is not true.
 
             var buildResult = await Project.RunDotNetBuildAsync();
@@ -134,7 +133,6 @@ namespace Templates.Test
                         PageUrls.LoginUrl,
                         PageUrls.HomeUrl,
                         PageUrls.PrivacyUrl,
-                        PageUrls.PrivacyUrl,
                         PageUrls.PrivacyUrl
                     }
                 },
@@ -146,7 +144,6 @@ namespace Templates.Test
                         PageUrls.RegisterUrl,
                         PageUrls.LoginUrl,
                         PageUrls.HomeUrl,
-                        PageUrls.PrivacyUrl,
                         PageUrls.PrivacyUrl,
                         PageUrls.DocsUrl,
                         PageUrls.PrivacyUrl
@@ -161,7 +158,6 @@ namespace Templates.Test
                         PageUrls.LoginUrl,
                         PageUrls.HomeUrl,
                         PageUrls.PrivacyUrl,
-                        PageUrls.PrivacyUrl,
                         PageUrls.PrivacyUrl
                     }
                 },
@@ -174,9 +170,9 @@ namespace Templates.Test
                         PageUrls.LoginUrl,
                         PageUrls.HomeUrl,
                         PageUrls.PrivacyUrl,
-                        PageUrls.PrivacyUrl,
                         PageUrls.ForgotPassword,
                         PageUrls.RegisterUrl,
+                        PageUrls.ResendEmailConfirmation,
                         PageUrls.ExternalArticle,
                         PageUrls.PrivacyUrl }
                 },
@@ -188,7 +184,6 @@ namespace Templates.Test
                         PageUrls.RegisterUrl,
                         PageUrls.LoginUrl,
                         PageUrls.HomeUrl,
-                        PageUrls.PrivacyUrl,
                         PageUrls.PrivacyUrl,
                         PageUrls.ExternalArticle,
                         PageUrls.PrivacyUrl

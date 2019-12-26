@@ -1,10 +1,10 @@
 ﻿@page "/components/throws"
-    
+
 @* This is expected to throw and result in a 500 *@
-@functions { 
-    protected override async Task OnInitAsync()
+@code {
+    protected override async Task OnInitializedAsync()
     {
-        await base.OnInitAsync();
+        await base.OnInitializedAsync();
         throw new InvalidTimeZoneException("test");
     }
 }

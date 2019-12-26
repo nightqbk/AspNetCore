@@ -9,6 +9,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipelines;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.HPack;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -21,9 +23,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core.Internal;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http2;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http2.FlowControl;
-using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http2.HPack;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Infrastructure;
-using Microsoft.AspNetCore.Server.Kestrel.Transport.Abstractions.Internal;
 using Microsoft.AspNetCore.Testing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
@@ -35,7 +35,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
 {
     public class Http2TestBase : TestApplicationErrorLoggerLoggedTest, IDisposable, IHttpHeadersHandler
     {
-        protected static readonly int MaxRequestHeaderFieldSize = 8192;
+        protected static readonly int MaxRequestHeaderFieldSize = 16 * 1024;
         protected static readonly string _4kHeaderValue = new string('a', 4096);
 
         protected static readonly IEnumerable<KeyValuePair<string, string>> _browserRequestHeaders = new[]
@@ -115,7 +115,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
         protected static readonly byte[] _noData = new byte[0];
         protected static readonly byte[] _maxData = Encoding.ASCII.GetBytes(new string('a', Http2PeerSettings.MinAllowedMaxFrameSize));
 
-        private readonly MemoryPool<byte> _memoryPool = KestrelMemoryPool.Create();
+        private readonly MemoryPool<byte> _memoryPool = SlabMemoryPoolFactory.Create();
 
         internal readonly Http2PeerSettings _clientSettings = new Http2PeerSettings();
         internal readonly HPackEncoder _hpackEncoder = new HPackEncoder();
@@ -130,6 +130,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
 
         protected readonly ConcurrentDictionary<int, TaskCompletionSource<object>> _runningStreams = new ConcurrentDictionary<int, TaskCompletionSource<object>>();
         protected readonly Dictionary<string, string> _receivedHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        protected readonly Dictionary<string, string> _receivedTrailers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         protected readonly Dictionary<string, string> _decodedHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         protected readonly HashSet<int> _abortedStreamIds = new HashSet<int>();
         protected readonly object _abortedStreamIdsLock = new object();
@@ -145,12 +146,12 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
         protected readonly RequestDelegate _largeHeadersApplication;
         protected readonly RequestDelegate _waitForAbortApplication;
         protected readonly RequestDelegate _waitForAbortFlushingApplication;
-        protected readonly RequestDelegate _waitForAbortWithDataApplication;
         protected readonly RequestDelegate _readRateApplication;
         protected readonly RequestDelegate _echoMethod;
         protected readonly RequestDelegate _echoHost;
         protected readonly RequestDelegate _echoPath;
         protected readonly RequestDelegate _appAbort;
+        protected readonly RequestDelegate _appReset;
 
         internal TestServiceContext _serviceContext;
         private Timer _timer;
@@ -199,15 +200,28 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
 
             _readTrailersApplication = async context =>
             {
+                Assert.True(context.Request.SupportsTrailers(), "SupportsTrailers");
+                Assert.False(context.Request.CheckTrailersAvailable(), "SupportsTrailers");
+
                 using (var ms = new MemoryStream())
                 {
                     // Consuming the entire request body guarantees trailers will be available
                     await context.Request.Body.CopyToAsync(ms);
                 }
 
+                Assert.True(context.Request.SupportsTrailers(), "SupportsTrailers");
+                Assert.True(context.Request.CheckTrailersAvailable(), "SupportsTrailers");
+
                 foreach (var header in context.Request.Headers)
                 {
                     _receivedHeaders[header.Key] = header.Value.ToString();
+                }
+
+                var trailers = context.Features.Get<IHttpRequestTrailersFeature>().Trailers;
+
+                foreach (var header in trailers)
+                {
+                    _receivedTrailers[header.Key] = header.Value.ToString();
                 }
             };
 
@@ -308,28 +322,6 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                 _runningStreams[streamIdFeature.StreamId].TrySetResult(null);
             };
 
-            _waitForAbortWithDataApplication = async context =>
-            {
-                var streamIdFeature = context.Features.Get<IHttp2StreamIdFeature>();
-                var sem = new SemaphoreSlim(0);
-
-                context.RequestAborted.Register(() =>
-                {
-                    lock (_abortedStreamIdsLock)
-                    {
-                        _abortedStreamIds.Add(streamIdFeature.StreamId);
-                    }
-
-                    sem.Release();
-                });
-
-                await sem.WaitAsync().DefaultTimeout();
-
-                await context.Response.Body.WriteAsync(new byte[10], 0, 10);
-
-                _runningStreams[streamIdFeature.StreamId].TrySetResult(null);
-            };
-
             _readRateApplication = async context =>
             {
                 var expectedBytes = int.Parse(context.Request.Path.Value.Substring(1));
@@ -377,11 +369,19 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                 context.Abort();
                 return Task.CompletedTask;
             };
+
+            _appReset = context =>
+            {
+                var resetFeature = context.Features.Get<IHttpResetFeature>();
+                Assert.NotNull(resetFeature);
+                resetFeature.Reset((int)Http2ErrorCode.CANCEL);
+                return Task.CompletedTask;
+            };
         }
 
-        public override void Initialize(MethodInfo methodInfo, object[] testMethodArguments, ITestOutputHelper testOutputHelper)
+        public override void Initialize(TestContext context, MethodInfo methodInfo, object[] testMethodArguments, ITestOutputHelper testOutputHelper)
         {
-            base.Initialize(methodInfo, testMethodArguments, testOutputHelper);
+            base.Initialize(context, methodInfo, testMethodArguments, testOutputHelper);
 
             _serviceContext = new TestServiceContext(LoggerFactory, _mockKestrelTrace.Object)
             {
@@ -401,12 +401,12 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             base.Dispose();
         }
 
-        void IHttpHeadersHandler.OnHeader(Span<byte> name, Span<byte> value)
+        void IHttpHeadersHandler.OnHeader(ReadOnlySpan<byte> name, ReadOnlySpan<byte> value)
         {
             _decodedHeaders[name.GetAsciiStringNonNullCharacters()] = value.GetAsciiOrUTF8StringNonNullCharacters();
         }
 
-        void IHttpHeadersHandler.OnHeadersComplete() { }
+        void IHttpHeadersHandler.OnHeadersComplete(bool endStream) { }
 
         protected void CreateConnection()
         {
@@ -415,8 +415,8 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             // Always dispatch test code back to the ThreadPool. This prevents deadlocks caused by continuing
             // Http2Connection.ProcessRequestsAsync() loop with writer locks acquired. Run product code inline to make
             // it easier to verify request frames are processed correctly immediately after sending the them.
-            var inputPipeOptions = ConnectionDispatcher.GetInputPipeOptions(_serviceContext, _memoryPool, PipeScheduler.ThreadPool);
-            var outputPipeOptions = ConnectionDispatcher.GetOutputPipeOptions(_serviceContext, _memoryPool, PipeScheduler.ThreadPool);
+            var inputPipeOptions = GetInputPipeOptions(_serviceContext, _memoryPool, PipeScheduler.ThreadPool);
+            var outputPipeOptions = GetOutputPipeOptions(_serviceContext, _memoryPool, PipeScheduler.ThreadPool);
 
             _pair = DuplexPipe.CreateConnectionPair(inputPipeOptions, outputPipeOptions);
 
@@ -445,7 +445,22 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                 CreateConnection();
             }
 
-            _connectionTask = _connection.ProcessRequestsAsync(new DummyApplication(application));
+            var connectionTask = _connection.ProcessRequestsAsync(new DummyApplication(application));
+
+            async Task CompletePipeOnTaskCompletion()
+            {
+                try
+                {
+                    await connectionTask;
+                }
+                finally
+                {
+                    _pair.Transport.Input.Complete();
+                    _pair.Transport.Output.Complete();
+                }
+            }
+
+            _connectionTask = CompletePipeOnTaskCompletion();
 
             await SendPreambleAsync().ConfigureAwait(false);
             await SendSettingsAsync();
@@ -673,7 +688,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
             await writableBuffer.FlushAsync().AsTask().DefaultTimeout();
         }
 
-        protected Task SendPreambleAsync() => SendAsync(new ArraySegment<byte>(Http2Connection.ClientPreface));
+        protected Task SendPreambleAsync() => SendAsync(Http2Connection.ClientPreface);
 
         protected async Task SendSettingsAsync()
         {
@@ -1098,12 +1113,13 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                 var buffer = result.Buffer;
                 var consumed = buffer.Start;
                 var examined = buffer.Start;
+                var copyBuffer = buffer;
 
                 try
                 {
                     Assert.True(buffer.Length > 0);
 
-                    if (Http2FrameReader.ReadFrame(buffer, frame, maxFrameSize, out var framePayload))
+                    if (Http2FrameReader.TryReadFrame(ref buffer, frame, maxFrameSize, out var framePayload))
                     {
                         consumed = examined = framePayload.End;
                         frame.Payload = framePayload.ToArray();
@@ -1121,7 +1137,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
                 }
                 finally
                 {
-                    _bytesReceived += buffer.Slice(buffer.Start, consumed).Length;
+                    _bytesReceived += copyBuffer.Slice(copyBuffer.Start, consumed).Length;
                     _pair.Application.Input.AdvanceTo(consumed, examined);
                 }
             }
@@ -1232,6 +1248,41 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Core.Tests
 
             clock.UtcNow = endTime;
             _timeoutControl.Tick(clock.UtcNow);
+        }
+
+        private static PipeOptions GetInputPipeOptions(ServiceContext serviceContext, MemoryPool<byte> memoryPool, PipeScheduler writerScheduler) => new PipeOptions
+        (
+            pool: memoryPool,
+            readerScheduler: serviceContext.Scheduler,
+            writerScheduler: writerScheduler,
+            pauseWriterThreshold: serviceContext.ServerOptions.Limits.MaxRequestBufferSize ?? 0,
+            resumeWriterThreshold: serviceContext.ServerOptions.Limits.MaxRequestBufferSize ?? 0,
+            useSynchronizationContext: false,
+            minimumSegmentSize: memoryPool.GetMinimumSegmentSize()
+        );
+
+        private static PipeOptions GetOutputPipeOptions(ServiceContext serviceContext, MemoryPool<byte> memoryPool, PipeScheduler readerScheduler) => new PipeOptions
+        (
+            pool: memoryPool,
+            readerScheduler: readerScheduler,
+            writerScheduler: serviceContext.Scheduler,
+            pauseWriterThreshold: GetOutputResponseBufferSize(serviceContext),
+            resumeWriterThreshold: GetOutputResponseBufferSize(serviceContext),
+            useSynchronizationContext: false,
+            minimumSegmentSize: memoryPool.GetMinimumSegmentSize()
+        );
+
+        private static long GetOutputResponseBufferSize(ServiceContext serviceContext)
+        {
+            var bufferSize = serviceContext.ServerOptions.Limits.MaxResponseBufferSize;
+            if (bufferSize == 0)
+            {
+                // 0 = no buffering so we need to configure the pipe so the writer waits on the reader directly
+                return 1;
+            }
+
+            // null means that we have no back pressure
+            return bufferSize ?? 0;
         }
 
         internal class Http2FrameWithPayload : Http2Frame

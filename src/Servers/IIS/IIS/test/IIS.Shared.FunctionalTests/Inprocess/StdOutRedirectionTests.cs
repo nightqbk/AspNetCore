@@ -1,18 +1,15 @@
 // Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
-using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Server.IIS.FunctionalTests.Utilities;
-using Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests;
 using Microsoft.AspNetCore.Server.IntegrationTesting.IIS;
-using Microsoft.AspNetCore.Testing.xunit;
-using Newtonsoft.Json;
+using Microsoft.AspNetCore.Testing;
 using Xunit;
 
-namespace IIS.FunctionalTests.Inprocess
+namespace Microsoft.AspNetCore.Server.IIS.FunctionalTests
 {
     [Collection(PublishedSitesCollection.Name)]
     public class StdOutRedirectionTests : LogFileTestBase
@@ -37,7 +34,7 @@ namespace IIS.FunctionalTests.Inprocess
             StopServer();
 
             EventLogHelpers.VerifyEventLogEvent(deploymentResult,
-                "The specified framework 'Microsoft.NETCore.App', version '2.9.9' was not found.", Logger);
+                "The framework 'Microsoft.NETCore.App', version '2.9.9' was not found.", Logger);
         }
 
         [ConditionalFact]
@@ -59,7 +56,7 @@ namespace IIS.FunctionalTests.Inprocess
             StopServer();
 
             var contents = Helpers.ReadAllTextFromFile(Helpers.GetExpectedLogName(deploymentResult, _logFolderPath), Logger);
-            var expectedString = "The specified framework 'Microsoft.NETCore.App', version '2.9.9' was not found.";
+            var expectedString = "The framework 'Microsoft.NETCore.App', version '2.9.9' was not found.";
             EventLogHelpers.VerifyEventLogEvent(deploymentResult, expectedString, Logger);
             Assert.Contains(expectedString, contents);
         }

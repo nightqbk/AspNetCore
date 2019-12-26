@@ -10,7 +10,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Endpoints;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -252,7 +251,7 @@ namespace Microsoft.AspNetCore.Mvc.Authorization
                 return Task.FromResult(policyName == "true" ? _true : _false);
             }
 
-            public Task<AuthorizationPolicy> GetRequiredPolicyAsync()
+            public Task<AuthorizationPolicy> GetFallbackPolicyAsync()
                 => Task.FromResult<AuthorizationPolicy>(null);
         }
 
@@ -318,11 +317,11 @@ namespace Microsoft.AspNetCore.Mvc.Authorization
         public async Task AuthorizationFilterCombinesMultipleFilters()
         {
             // Arrange
-            var authorizeFilter = new AuthorizeFilter(new AuthorizationPolicyBuilder().RequireAssertion(a => true).Build());
+            var authorizeFilter = new AuthorizeFilter(new AuthorizationPolicyBuilder().RequireAssertion(a => false).Build());
             var authorizationContext = GetAuthorizationContext(anonymous: false);
             // Effective policy should fail, if both are combined
             authorizationContext.Filters.Add(authorizeFilter);
-            var secondFilter = new AuthorizeFilter(new AuthorizationPolicyBuilder().RequireAssertion(a => false).Build());
+            var secondFilter = new AuthorizeFilter(new AuthorizationPolicyBuilder().RequireAssertion(a => true).Build());
             authorizationContext.Filters.Add(secondFilter);
 
             // Act
@@ -511,26 +510,6 @@ namespace Microsoft.AspNetCore.Mvc.Authorization
             Assert.NotSame(authorizeFilter, result);
             var actual = Assert.IsType<AuthorizeFilter>(result);
             Assert.Same(policyProvider, actual.PolicyProvider);
-        }
-
-        [Fact]
-        public async Task GetEffectivePolicyAsync_ReturnsCurrentPolicy_WhenNoEndpointMetadataIsAvailable()
-        {
-            // Arrange
-            var policy = new AuthorizationPolicyBuilder()
-                .RequireAssertion(_ => true)
-                .Build();
-            var filter = new AuthorizeFilter(policy);
-
-            var context = new AuthorizationFilterContext(ActionContext, new[] { filter });
-
-            // Act
-            var effectivePolicy = await filter.GetEffectivePolicyAsync(context);
-
-            // Assert
-            //
-            // Verify the policy is cached
-            Assert.Same(effectivePolicy, await filter.GetEffectivePolicyAsync(context));
         }
 
         [Fact]

@@ -7,10 +7,10 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Server.IIS.FunctionalTests.Utilities;
 using Microsoft.AspNetCore.Server.IntegrationTesting;
 using Microsoft.AspNetCore.Server.IntegrationTesting.IIS;
-using Microsoft.AspNetCore.Testing.xunit;
+using Microsoft.AspNetCore.Testing;
 using Xunit;
 
-namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
+namespace Microsoft.AspNetCore.Server.IIS.FunctionalTests
 {
     [Collection(PublishedSitesCollection.Name)]
     public class WindowsAuthTests : IISFunctionalTestBase
@@ -21,7 +21,7 @@ namespace Microsoft.AspNetCore.Server.IISIntegration.FunctionalTests
 
         public static TestMatrix TestVariants
             => TestMatrix.ForServers(DeployerSelector.ServerType)
-                .WithTfms(Tfm.NetCoreApp30)
+                .WithTfms(Tfm.NetCoreApp50)
                 .WithApplicationTypes(ApplicationType.Portable)
                 .WithAllHostingModels();
 

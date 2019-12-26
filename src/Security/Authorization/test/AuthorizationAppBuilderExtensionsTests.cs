@@ -2,15 +2,11 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
 using System;
-using System.Collections.Generic;
-using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization.Test.TestObjects;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Builder.Internal;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Endpoints;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -53,7 +49,7 @@ namespace Microsoft.AspNetCore.Authorization.Test
         {
             // Arrange
             var authenticationService = new TestAuthenticationService();
-            
+
             var app = new ApplicationBuilder(new ServiceCollection().BuildServiceProvider());
 
             // Act
@@ -74,9 +70,7 @@ namespace Microsoft.AspNetCore.Authorization.Test
         {
             var services = new ServiceCollection();
 
-#pragma warning disable CS0618 // Type or member is obsolete
-            services.AddAuthorizationPolicyEvaluator();
-#pragma warning restore CS0618 // Type or member is obsolete
+            services.AddAuthorization();
             services.AddLogging();
             services.AddSingleton(authenticationService);
 

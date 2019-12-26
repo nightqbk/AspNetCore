@@ -3,6 +3,7 @@
 
 using System;
 using System.IO.Pipelines;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
@@ -117,7 +118,7 @@ namespace PlatformBenchmarks
 
             // Content-Length header
             writer.Write(_headerContentLength);
-            var jsonPayload = JsonSerializer.ToBytes(new { message = "Hello, World!" }, SerializerOptions);
+            var jsonPayload = JsonSerializer.SerializeToUtf8Bytes(new JsonMessage { message = "Hello, World!" }, SerializerOptions);
             writer.WriteNumeric((uint)jsonPayload.Length);
 
             // End of headers
@@ -154,6 +155,11 @@ namespace PlatformBenchmarks
             NotRecognized,
             PlainText,
             Json
+        }
+
+        public struct JsonMessage
+        {
+            public string message { get; set; }
         }
     }
 }

@@ -19,6 +19,8 @@
 <Project>
 
   <PropertyGroup>
+    <EnableCustomReferenceResolution Condition="'$(EnableCustomReferenceResolution)' == '' AND ('$(DotNetBuildFromSource)' != 'true' OR '$(ExcludeFromSourceBuild)' != 'true')">true</EnableCustomReferenceResolution>
+
     <ResolveReferencesDependsOn>
       ResolveCustomReferences;
       $(ResolveReferencesDependsOn);
@@ -34,7 +36,8 @@
     -->
     <UseLatestPackageReferences Condition=" '$(UseLatestPackageReferences)' == '' AND '$(IsServicingBuild)' != 'true'  ">true</UseLatestPackageReferences>
     <UseLatestPackageReferences Condition=" '$(UseLatestPackageReferences)' == '' AND '$(IsImplementationProject)' != 'true' ">true</UseLatestPackageReferences>
-    <UseLatestPackageReferences Condition=" '$(UseLatestPackageReferences)' == '' AND '$(IsImplementationProject)' == 'true' AND ( '$(IsServicingBuild)' != 'true' OR '$(IsPackable)' == 'true' ) ">true</UseLatestPackageReferences>
+    <UseLatestPackageReferences
+        Condition=" '$(UseLatestPackageReferences)' == '' AND '$(IsImplementationProject)' == 'true' AND '$(IsPackable)' == 'true' ">true</UseLatestPackageReferences>
     <UseLatestPackageReferences Condition=" '$(UseLatestPackageReferences)' == '' ">false</UseLatestPackageReferences>
 
     <!--
@@ -43,7 +46,7 @@
         * when a project is a test or sample project
       We don't use project references between components in servicing builds between compontents to preserve the baseline as much as possible.
     -->
-    <UseProjectReferences Condition=" '$(UseProjectReferences)' == '' AND '$(IsServicingBuild)' != 'true'  ">true</UseProjectReferences>
+    <UseProjectReferences Condition=" '$(UseProjectReferences)' == '' AND '$(IsServicingBuild)' != 'true' ">true</UseProjectReferences>
     <UseProjectReferences Condition=" '$(UseProjectReferences)' == '' AND '$(IsImplementationProject)' != 'true' ">true</UseProjectReferences>
     <UseProjectReferences Condition=" '$(UseProjectReferences)' == '' ">false</UseProjectReferences>
 
@@ -60,7 +63,7 @@
     </Reference>
   </ItemDefinitionGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(EnableCustomReferenceResolution)' == 'true'">
     <Reference Update="@(Reference)">
       <IsSharedSource Condition="'%(IsSharedSource)' == '' AND $([System.String]::new('%(Identity)').EndsWith('.Sources'))">true</IsSharedSource>
     </Reference>
@@ -103,10 +106,6 @@
     </ProjectReference>
 
     <Reference Remove="@(_ProjectReferenceByAssemblyName)" />
-
-    <!-- Use _ReferenceTemp to workaround issues in Visual Studio which causes a conflict between Reference, packages, and projects. -->
-    <_ReferenceTemp Include="@(Reference)" />
-    <Reference Remove="@(Reference)" />
   </ItemGroup>
 
   <!--
@@ -124,7 +123,7 @@
            Text="Cannot reference &quot;%(_InvalidReferenceToNonSharedFxAssembly.Identity)&quot;. This dependency is not in the shared framework. See docs/SharedFramework.md for instructions on how to modify what is in the shared framework." />
   </Target>
 
-  <Target Name="_WarnAboutRedundantRef" AfterTargets="ResolveFrameworkReferences">
+  <Target Name="_WarnAboutRedundantRef" AfterTargets="ResolveFrameworkReferences;ProcessFrameworkReferences">
     <Warning Condition="@(FrameworkReference->WithMetadataValue('Identity', 'Microsoft.AspNetCore.App')->Count()) &gt; 1"
              Text="Redundant &lt;FrameworkReference&gt;. If you have an explicit item in the project file, you might be able to remove it. Some SDKs, like Microsoft.NET.Sdk.Web, add this implicitly." />
   </Target>
@@ -133,11 +132,8 @@
     This target resolves remaining Referene items to Packages, if possible. If not, they are left as Reference items fo the SDK to resolve.
     This executes on NuGet restore and during DesignTimeBuild. It should not run in the outer, cross-targeting build.
    -->
-  <Target Name="ResolveCustomReferences" BeforeTargets="CollectPackageReferences;ResolveAssemblyReferencesDesignTime;ResolveAssemblyReferences" Condition=" '$(TargetFramework)' != '' ">
+  <Target Name="ResolveCustomReferences" BeforeTargets="CollectPackageReferences;ResolveAssemblyReferencesDesignTime;ResolveAssemblyReferences" Condition=" '$(TargetFramework)' != '' AND '$(EnableCustomReferenceResolution)' == 'true' ">
     <ItemGroup>
-      <Reference Include="@(_ReferenceTemp)" />
-      <_ReferenceTemp Remove="@(_ReferenceTemp)" />
-
       <!-- Ensure only content asset are consumed from .Sources packages -->
       <Reference>
         <IncludeAssets Condition="'%(IsSharedSource)' == 'true'">ContentFiles;Build</IncludeAssets>
@@ -232,7 +228,7 @@
   <Target Name="_GetReferencesProvided" Returns="@(ProvidesReference)">
     <PropertyGroup>
       <ReferenceAssemblyDirectory>$(MSBuildProjectDirectory)/../ref/</ReferenceAssemblyDirectory>
-      <ReferenceAssemblyProjectFileRelativePath>$([MSBuild]::MakeRelative($(RepositoryRoot), '$(ReferenceAssemblyDirectory)$(MSBuildProjectFile)'))</ReferenceAssemblyProjectFileRelativePath>
+      <ReferenceAssemblyProjectFileRelativePath>$([MSBuild]::MakeRelative($(RepoRoot), '$(ReferenceAssemblyDirectory)$(MSBuildProjectFile)'))</ReferenceAssemblyProjectFileRelativePath>
     </PropertyGroup>
 
     <Error Condition="'$(SkipRefDirectoryCheck)' != 'true' AND '$(IsImplementationProject)' == 'true' AND '$(HasReferenceAssembly)' != 'true' AND Exists($(ReferenceAssemblyDirectory))" Text="Project shouldn't have reference assembly but folder exists $(ReferenceAssemblyDirectory)" />
@@ -242,7 +238,7 @@
       <ProvidesReference Include="$(AssemblyName)">
         <IsAspNetCoreApp>$([MSBuild]::ValueOrDefault($(IsAspNetCoreApp),'false'))</IsAspNetCoreApp>
         <IsShippingPackage>$([MSBuild]::ValueOrDefault($(IsShippingPackage),'false'))</IsShippingPackage>
-        <ProjectFileRelativePath>$([MSBuild]::MakeRelative($(RepositoryRoot), $(MSBuildProjectFullPath)))</ProjectFileRelativePath>
+        <ProjectFileRelativePath>$([MSBuild]::MakeRelative($(RepoRoot), $(MSBuildProjectFullPath)))</ProjectFileRelativePath>
         <ReferenceAssemblyProjectFileRelativePath Condition="'$(HasReferenceAssembly)' == 'true'">$(ReferenceAssemblyProjectFileRelativePath)</ReferenceAssemblyProjectFileRelativePath>
       </ProvidesReference>
     </ItemGroup>

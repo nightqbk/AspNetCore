@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -10,9 +11,11 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpSys.Internal;
 using Microsoft.AspNetCore.Testing;
-using Microsoft.AspNetCore.Testing.xunit;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Microsoft.AspNetCore.Server.HttpSys
@@ -30,6 +33,68 @@ namespace Microsoft.AspNetCore.Server.HttpSys
             {
                 string response = await SendRequestAsync(address);
                 Assert.Equal(string.Empty, response);
+            }
+        }
+
+        [ConditionalFact]
+        public async Task Server_ConnectExistingQueueName_Success()
+        {
+            string address;
+            var queueName = Guid.NewGuid().ToString();
+
+            // First create the queue.
+            HttpRequestQueueV2Handle requestQueueHandle = null;
+            var statusCode = HttpApi.HttpCreateRequestQueue(
+                    HttpApi.Version,
+                    queueName,
+                    null,
+                    0,
+                    out requestQueueHandle);
+
+            Assert.True(statusCode == UnsafeNclNativeMethods.ErrorCodes.ERROR_SUCCESS);
+
+            // Now attach to the existing one
+            using (Utilities.CreateHttpServer(out address, httpContext =>
+            {
+                return Task.FromResult(0);
+            }, options =>
+            {
+                options.RequestQueueName = queueName;
+                options.RequestQueueMode = RequestQueueMode.Attach;
+            }))
+            {
+                var psi = new ProcessStartInfo("netsh", "http show servicestate view=requestq")
+                {
+                    RedirectStandardOutput = true
+                };
+                using var process = Process.Start(psi);
+                process.Start();
+                var netshOutput = await process.StandardOutput.ReadToEndAsync();
+                Assert.Contains(queueName, netshOutput);
+            }
+        }
+
+        [ConditionalFact]
+        public async Task Server_SetQueueName_Success()
+        {
+            string address;
+            var queueName = Guid.NewGuid().ToString();
+            using (Utilities.CreateHttpServer(out address, httpContext =>
+            {
+                return Task.FromResult(0);
+            }, options =>
+            {
+                options.RequestQueueName = queueName;
+            }))
+            {
+                var psi = new ProcessStartInfo("netsh", "http show servicestate view=requestq")
+                {
+                    RedirectStandardOutput = true
+                };
+                using var process = Process.Start(psi);
+                process.Start();
+                var netshOutput = await process.StandardOutput.ReadToEndAsync();
+                Assert.Contains(queueName, netshOutput);
             }
         }
 
@@ -66,6 +131,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalFact]
+        [Flaky("https://github.com/aspnet/AspNetCore-Internal/issues/2267", FlakyOn.All)]
         public async Task Server_ShutdownDuringRequest_Success()
         {
             Task<string> responseTask;
@@ -147,39 +213,6 @@ namespace Microsoft.AspNetCore.Server.HttpSys
         }
 
         [ConditionalFact]
-        public void Server_MultipleOutstandingSyncRequests_Success()
-        {
-            int requestLimit = 10;
-            int requestCount = 0;
-            TaskCompletionSource<object> tcs = new TaskCompletionSource<object>();
-
-            string address;
-            using (Utilities.CreateHttpServer(out address, httpContext =>
-            {
-                if (Interlocked.Increment(ref requestCount) == requestLimit)
-                {
-                    tcs.TrySetResult(null);
-                }
-                else
-                {
-                    tcs.Task.Wait();
-                }
-
-                return Task.FromResult(0);
-            }))
-            {
-                List<Task> requestTasks = new List<Task>();
-                for (int i = 0; i < requestLimit; i++)
-                {
-                    Task<string> requestTask = SendRequestAsync(address);
-                    requestTasks.Add(requestTask);
-                }
-
-                Assert.True(Task.WaitAll(requestTasks.ToArray(), TimeSpan.FromSeconds(60)), "Timed out");
-            }
-        }
-
-        [ConditionalFact]
         public void Server_MultipleOutstandingAsyncRequests_Success()
         {
             int requestLimit = 10;
@@ -225,7 +258,7 @@ namespace Microsoft.AspNetCore.Server.HttpSys
                 ct.Register(() => canceled.SetResult(0));
                 received.SetResult(0);
                 await aborted.Task.TimeoutAfter(interval);
-                Assert.True(ct.WaitHandle.WaitOne(interval), "CT Wait");
+                await canceled.Task.TimeoutAfter(interval);
                 Assert.True(ct.IsCancellationRequested, "IsCancellationRequested");
             }))
             {
@@ -312,10 +345,6 @@ namespace Microsoft.AspNetCore.Server.HttpSys
                             Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
                         }
                     }
-
-                    // A connection has been closed, try again.
-                    string responseText = await SendRequestAsync(address);
-                    Assert.Equal(string.Empty, responseText);
                 }
             }
         }
@@ -330,31 +359,6 @@ namespace Microsoft.AspNetCore.Server.HttpSys
                 Assert.Null(server.Listener.Options.MaxConnections);
                 server.Listener.Options.MaxConnections = null;
                 server.Listener.Options.MaxConnections = 3;
-            }
-        }
-
-        [ConditionalFact]
-        public async Task Server_SetConnectionLimit_Success()
-        {
-            using (Utilities.CreateDynamicHost(out var address, options =>
-            {
-                Assert.Null(options.MaxConnections);
-                options.MaxConnections = 3;
-            }, httpContext => Task.FromResult(0)))
-            {
-                using (var client1 = await SendHungRequestAsync("GET", address))
-                using (var client2 = await SendHungRequestAsync("GET", address))
-                {
-                    using (var client3 = await SendHungRequestAsync("GET", address))
-                    {
-                        // Maxed out, refuses connection and throws
-                        await Assert.ThrowsAsync<HttpRequestException>(() => SendRequestAsync(address));
-                    }
-
-                    // A connection has been closed, try again.
-                    string responseText = await SendRequestAsync(address);
-                    Assert.Equal(string.Empty, responseText);
-                }
             }
         }
 
@@ -593,9 +597,28 @@ namespace Microsoft.AspNetCore.Server.HttpSys
             }
         }
 
+        [ConditionalFact]
+        public async Task Server_AttachToExistingQueue_NoIServerAddresses_NoDefaultAdded()
+        {
+            var queueName = Guid.NewGuid().ToString();
+            using var server = Utilities.CreateHttpServer(out var address, httpContext => Task.CompletedTask, options =>
+            {
+                options.RequestQueueName = queueName;
+            });
+            using var attachedServer = Utilities.CreatePump(options =>
+            {
+                options.RequestQueueName = queueName;
+                options.RequestQueueMode = RequestQueueMode.Attach;
+            });
+            await attachedServer.StartAsync(new DummyApplication(context => Task.CompletedTask), default);
+            var addressesFeature = attachedServer.Features.Get<IServerAddressesFeature>();
+            Assert.Empty(addressesFeature.Addresses);
+            Assert.Empty(attachedServer.Listener.Options.UrlPrefixes);
+        }
+
         private async Task<string> SendRequestAsync(string uri)
         {
-            using (HttpClient client = new HttpClient() { Timeout = Utilities.DefaultTimeout } )
+            using (HttpClient client = new HttpClient() { Timeout = Utilities.DefaultTimeout })
             {
                 return await client.GetStringAsync(uri);
             }

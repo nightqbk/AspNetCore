@@ -4,9 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Server.Kestrel.Transport.Abstractions.Internal;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Libuv.Internal.Networking;
 using Microsoft.Extensions.Logging;
 
@@ -46,7 +46,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Transport.Libuv.Internal
         public async Task StartAsync(
             string pipeName,
             byte[] pipeMessage,
-            IEndPointInformation endPointInformation,
+            EndPoint endPoint,
             LibuvThread thread)
         {
             _pipeName = pipeName;
@@ -59,7 +59,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Transport.Libuv.Internal
                 Marshal.StructureToPtr(fileCompletionInfo, _fileCompletionInfoPtr, false);
             }
 
-            await StartAsync(endPointInformation, thread).ConfigureAwait(false);
+            await StartAsync(endPoint, thread).ConfigureAwait(false);
 
             await Thread.PostAsync(listener => listener.PostCallback(), this).ConfigureAwait(false);
         }
@@ -69,7 +69,7 @@ namespace Microsoft.AspNetCore.Server.Kestrel.Transport.Libuv.Internal
             ListenPipe = new UvPipeHandle(Log);
             ListenPipe.Init(Thread.Loop, Thread.QueueCloseHandle, false);
             ListenPipe.Bind(_pipeName);
-            ListenPipe.Listen(LibuvConstants.ListenBacklog,
+            ListenPipe.Listen(TransportContext.Options.Backlog,
                 (pipe, status, error, state) => ((ListenerPrimary)state).OnListenPipe(pipe, status, error), this);
         }
 

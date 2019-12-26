@@ -30,31 +30,60 @@ namespace OpenIdConnectSample
         }
 
         public IConfiguration Configuration { get; set; }
+
         public IWebHostEnvironment Environment { get; }
+
+        private void CheckSameSite(HttpContext httpContext, CookieOptions options)
+        {
+            if (options.SameSite > SameSiteMode.Unspecified)
+            {
+                var userAgent = httpContext.Request.Headers["User-Agent"];
+                // TODO: Use your User Agent library of choice here.
+                if (userAgent.Contains("CPU iPhone OS 12") // Also covers iPod touch
+                    || userAgent.Contains("iPad; CPU OS 12")
+                    // Safari 12 and 13 are both broken on Mojave
+                    || userAgent.Contains("Macintosh; Intel Mac OS X 10_14"))
+                {
+                    options.SameSite = SameSiteMode.Unspecified;
+                }
+            }
+        }
 
         public void ConfigureServices(IServiceCollection services)
         {
             JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
+            services.Configure<CookiePolicyOptions>(options =>
+            {
+                options.MinimumSameSitePolicy = SameSiteMode.Unspecified;
+                options.OnAppendCookie = cookieContext => CheckSameSite(cookieContext.Context, cookieContext.CookieOptions);
+                options.OnDeleteCookie = cookieContext => CheckSameSite(cookieContext.Context, cookieContext.CookieOptions);
+            });
+
             services.AddAuthentication(sharedOptions =>
             {
-                sharedOptions.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-                sharedOptions.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+                sharedOptions.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
                 sharedOptions.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
             })
                 .AddCookie()
                 .AddOpenIdConnect(o =>
             {
+                /*
                 o.ClientId = Configuration["oidc:clientid"];
                 o.ClientSecret = Configuration["oidc:clientsecret"]; // for code flow
                 o.Authority = Configuration["oidc:authority"];
+                */
+                // https://github.com/IdentityServer/IdentityServer4.Demo/blob/master/src/IdentityServer4Demo/Config.cs
+                o.ClientId = "server.hybrid";
+                o.ClientSecret = "secret"; // for code flow
+                o.Authority = "https://demo.identityserver.io/";
 
                 o.ResponseType = OpenIdConnectResponseType.CodeIdToken;
                 o.SaveTokens = true;
                 o.GetClaimsFromUserInfoEndpoint = true;
                 o.AccessDeniedPath = "/access-denied-from-remote";
 
-                o.ClaimActions.MapAllExcept("aud", "iss", "iat", "nbf", "exp", "aio", "c_hash", "uti", "nonce");
+                // o.ClaimActions.MapAllExcept("aud", "iss", "iat", "nbf", "exp", "aio", "c_hash", "uti", "nonce");
 
                 o.Events = new OpenIdConnectEvents()
                 {
@@ -78,6 +107,7 @@ namespace OpenIdConnectSample
         public void Configure(IApplicationBuilder app, IOptionsMonitor<OpenIdConnectOptions> optionsMonitor)
         {
             app.UseDeveloperExceptionPage();
+            app.UseCookiePolicy(); // Before UseAuthentication or anything else that writes cookies.
             app.UseAuthentication();
 
             app.Run(async context =>
